@@ -31,9 +31,10 @@ object AgentDockHtmlRenderer {
     )
 
     data class ActionResponse(
-        val state: ViewState,
+        val state: ViewState? = null,
         val query: String? = null,
-        val error: String? = null
+        val error: String? = null,
+        val refreshPending: Boolean = false
     )
 
     fun render(initialState: ViewState, bridgeScript: String): String {
@@ -350,9 +351,9 @@ object AgentDockHtmlRenderer {
                 }
 
                 .footer-strip {
-                  display: flex;
+                  display: grid;
+                  grid-template-columns: minmax(0, 1fr) auto;
                   align-items: center;
-                  justify-content: space-between;
                   gap: 10px;
                   padding: 8px 10px;
                   border-top: 1px solid var(--line-soft);
@@ -366,6 +367,55 @@ object AgentDockHtmlRenderer {
                   white-space: nowrap;
                   overflow: hidden;
                   text-overflow: ellipsis;
+                }
+
+                .footer-refresh {
+                  width: 28px;
+                  height: 28px;
+                  display: inline-flex;
+                  align-items: center;
+                  justify-content: center;
+                  border: 1px solid var(--line-soft);
+                  border-radius: 6px;
+                  color: var(--text-soft);
+                  background: rgba(255, 255, 255, .035);
+                  cursor: pointer;
+                  transition: background .15s ease, border-color .15s ease, color .15s ease, transform .12s ease;
+                }
+
+                .footer-refresh:hover {
+                  color: var(--text);
+                  background: rgba(255, 255, 255, .07);
+                  border-color: var(--line);
+                }
+
+                .footer-refresh:active {
+                  transform: translateY(1px);
+                }
+
+                .footer-refresh:disabled {
+                  opacity: 1;
+                }
+
+                .footer-refresh.is-refreshing {
+                  color: var(--green);
+                  background: var(--green-soft);
+                  border-color: rgba(104, 217, 130, .46);
+                  cursor: wait;
+                }
+
+                .footer-refresh svg {
+                  width: 15px;
+                  height: 15px;
+                  display: block;
+                }
+
+                .footer-refresh.is-refreshing svg {
+                  animation: agentdock-refresh-spin .72s linear infinite;
+                }
+
+                @keyframes agentdock-refresh-spin {
+                  to { transform: rotate(360deg); }
                 }
 
                 .toast {
@@ -402,6 +452,9 @@ object AgentDockHtmlRenderer {
                   var selectedProvider = "all";
                   var searchFocused = true;
                   var composingSearch = false;
+                  var refreshing = false;
+                  var refreshStartedAt = 0;
+                  var refreshFinishTimer = null;
                   var root = document.getElementById("agentdock-root");
                   var toast = document.getElementById("agentdock-toast");
 
@@ -511,7 +564,39 @@ object AgentDockHtmlRenderer {
                   }
 
                   function renderFooter() {
-                    return '<footer class="footer-strip"><div class="health">' + escapeHtml(state.health) + '</div></footer>';
+                    var refreshClass = refreshing ? " is-refreshing" : "";
+                    var refreshState = refreshing ? ' disabled aria-busy="true" title="正在刷新会话"' : ' aria-busy="false" title="刷新会话"';
+                    return '<footer class="footer-strip">' +
+                      '<div class="health">' + escapeHtml(state.health) + '</div>' +
+                      '<button class="footer-refresh' + refreshClass + '" data-action="refresh" aria-label="刷新会话"' + refreshState + '>' +
+                        '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M20 12a8 8 0 0 1-13.66 5.66M4 12A8 8 0 0 1 17.66 6.34M18 3v4h-4M6 21v-4h4" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>' +
+                      '</button>' +
+                    '</footer>';
+                  }
+
+                  function beginReloadFeedback() {
+                    if (refreshFinishTimer) {
+                      window.clearTimeout(refreshFinishTimer);
+                      refreshFinishTimer = null;
+                    }
+                    refreshing = true;
+                    refreshStartedAt = Date.now();
+                    render({focusSearch: false});
+                  }
+
+                  function finishReloadFeedback() {
+                    if (!refreshing) return false;
+                    var remaining = Math.max(0, 280 - (Date.now() - refreshStartedAt));
+                    if (remaining > 0) {
+                      refreshFinishTimer = window.setTimeout(function () {
+                        refreshing = false;
+                        refreshFinishTimer = null;
+                        if (!composingSearch) render();
+                      }, remaining);
+                      return true;
+                    }
+                    refreshing = false;
+                    return false;
                   }
 
                   function bind(forceSearchFocus) {
@@ -552,7 +637,10 @@ object AgentDockHtmlRenderer {
                     });
                     root.querySelectorAll("[data-action]").forEach(function (button) {
                       button.addEventListener("click", function () {
-                        send(button.getAttribute("data-action"), {id: button.getAttribute("data-id")});
+                        var action = button.getAttribute("data-action");
+                        var id = button.getAttribute("data-id");
+                        if (action === "refresh") beginReloadFeedback();
+                        send(action, {id: id});
                       });
                     });
                   }
@@ -578,6 +666,16 @@ object AgentDockHtmlRenderer {
                       if (payload.state) state = payload.state;
                       if (payload.query != null) query = payload.query;
                       if (payload.error) showError(payload.error);
+                      if (payload.refreshPending) {
+                        return;
+                      }
+                      var waitingForReloadFeedback = finishReloadFeedback();
+                      if (composingSearch) {
+                        return;
+                      }
+                      if (waitingForReloadFeedback) {
+                        return;
+                      }
                       render();
                     } catch (error) {
                       showError(String(error));
@@ -585,6 +683,14 @@ object AgentDockHtmlRenderer {
                   }
 
                   function showError(message) {
+                    if (refreshFinishTimer) {
+                      window.clearTimeout(refreshFinishTimer);
+                      refreshFinishTimer = null;
+                    }
+                    if (refreshing) {
+                      refreshing = false;
+                      render();
+                    }
                     toast.textContent = message || "AgentDock error";
                     toast.classList.add("show");
                     window.setTimeout(function () { toast.classList.remove("show"); }, 2400);
@@ -600,6 +706,10 @@ object AgentDockHtmlRenderer {
     }
 
     fun actionResponseJson(response: ActionResponse): String = scriptJson(response)
+
+    fun refreshPendingResponseJson(): String = scriptJson(ActionResponse(refreshPending = true))
+
+    fun errorResponseJson(error: String): String = scriptJson(ActionResponse(error = error))
 
     private fun scriptJson(value: Any): String {
         return gson.toJson(value)

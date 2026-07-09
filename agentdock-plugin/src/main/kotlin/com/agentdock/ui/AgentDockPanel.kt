@@ -24,8 +24,12 @@ import com.intellij.ui.jcef.JBCefBrowserBase
 import com.intellij.ui.jcef.JBCefJSQuery
 import java.awt.BorderLayout
 import java.awt.Color
+import java.awt.event.ComponentAdapter
+import java.awt.event.ComponentEvent
 import java.awt.Component
 import java.awt.Font
+import java.awt.event.HierarchyEvent
+import java.util.concurrent.atomic.AtomicBoolean
 import javax.swing.JComponent
 import javax.swing.JLabel
 import javax.swing.JPanel
@@ -40,6 +44,17 @@ class AgentDockPanel(
     private val providerRegistry = CLIProviderRegistry()
     private val browser: JBCefBrowser? = if (JBCefApp.isSupported()) JBCefBrowser() else null
     private val actionQuery: JBCefJSQuery? = browser?.let { JBCefJSQuery.create(it as JBCefBrowserBase) }
+    private val autoRefreshTimer = Timer(AUTO_REFRESH_INTERVAL_MS) { event ->
+        if (component.isShowing) {
+            requestBackgroundRefresh()
+        } else {
+            (event.source as? Timer)?.stop()
+        }
+    }.apply {
+        isRepeats = true
+    }
+    private val refreshInFlight = AtomicBoolean(false)
+    private var panelShowing = false
     private var sessionCount: Int = 0
 
     val component: JComponent = browser?.component ?: fallbackComponent()
@@ -50,7 +65,7 @@ class AgentDockPanel(
         }
         browser?.loadHTML(
             AgentDockHtmlRenderer.render(
-                initialState = viewState(forceDiscovery = true),
+                initialState = viewState(forceDiscovery = false),
                 bridgeScript = actionQuery?.inject(
                     "message",
                     "response => window.AgentDock.receive(response)",
@@ -58,13 +73,18 @@ class AgentDockPanel(
                 ).orEmpty()
             )
         )
+        if (browser != null) {
+            installVisibilityRefreshHooks()
+        }
     }
 
     fun attachContent() {
         updateToolWindowPresentation(sessionCount)
+        updateRefreshSchedule()
     }
 
     override fun dispose() {
+        autoRefreshTimer.stop()
         actionQuery?.dispose()
         browser?.dispose()
     }
@@ -73,15 +93,20 @@ class AgentDockPanel(
         return try {
             val json = parsePayload(payload)
             var query: String? = null
+            var forceDiscovery = false
             when (json.string("action")) {
                 "open" -> json.string("id")?.let { openSession(it) }
                 "pin" -> json.string("id")?.let { service.togglePin(it) }
                 "archive" -> json.string("id")?.let { service.toggleArchive(it) }
+                "refresh" -> {
+                    requestBackgroundRefresh()
+                    return AgentDockHtmlRenderer.refreshPendingResponseJson()
+                }
                 "current-file" -> query = currentFileName()
                 "settings" -> SwingUtilities.invokeLater { openSettings() }
                 "new" -> SwingUtilities.invokeLater { createSessionAndRefresh() }
             }
-            actionResponse(query = query)
+            actionResponse(query = query, forceDiscovery = forceDiscovery)
         } catch (error: Exception) {
             actionResponse(error = error.message ?: "AgentDock action failed")
         }
@@ -119,16 +144,78 @@ class AgentDockPanel(
         }
     }
 
-    private fun pushState() {
-        val response = actionResponse()
+    private fun pushState(forceDiscovery: Boolean = false) {
+        val response = actionResponse(forceDiscovery = forceDiscovery)
         val script = "window.AgentDock && window.AgentDock.receive(${quoteJs(response)});"
-        browser?.cefBrowser?.executeJavaScript(script, browser.cefBrowser.url, 0)
+        ApplicationManager.getApplication().invokeLater {
+            browser?.cefBrowser?.executeJavaScript(script, browser.cefBrowser.url, 0)
+        }
     }
 
-    private fun actionResponse(query: String? = null, error: String? = null): String {
+    private fun pushError(error: Throwable) {
+        val response = AgentDockHtmlRenderer.errorResponseJson(error.message ?: "AgentDock refresh failed")
+        val script = "window.AgentDock && window.AgentDock.receive(${quoteJs(response)});"
+        ApplicationManager.getApplication().invokeLater {
+            browser?.cefBrowser?.executeJavaScript(script, browser.cefBrowser.url, 0)
+        }
+    }
+
+    private fun requestBackgroundRefresh() {
+        if (!refreshInFlight.compareAndSet(false, true)) return
+        ApplicationManager.getApplication().executeOnPooledThread {
+            try {
+                pushState(forceDiscovery = true)
+            } catch (error: Throwable) {
+                pushError(error)
+            } finally {
+                refreshInFlight.set(false)
+            }
+        }
+    }
+
+    private fun installVisibilityRefreshHooks() {
+        component.addHierarchyListener { event ->
+            if (event.changeFlags and HierarchyEvent.SHOWING_CHANGED.toLong() != 0L) {
+                updateRefreshSchedule()
+            }
+        }
+        component.addComponentListener(object : ComponentAdapter() {
+            override fun componentShown(event: ComponentEvent) {
+                updateRefreshSchedule()
+            }
+
+            override fun componentHidden(event: ComponentEvent) {
+                updateRefreshSchedule()
+            }
+        })
+        SwingUtilities.invokeLater {
+            updateRefreshSchedule()
+        }
+    }
+
+    private fun updateRefreshSchedule() {
+        val showing = component.isShowing
+        if (showing) {
+            if (!autoRefreshTimer.isRunning) {
+                autoRefreshTimer.start()
+            }
+            if (!panelShowing) {
+                requestBackgroundRefresh()
+            }
+        } else {
+            autoRefreshTimer.stop()
+        }
+        panelShowing = showing
+    }
+
+    private fun actionResponse(
+        query: String? = null,
+        error: String? = null,
+        forceDiscovery: Boolean = false
+    ): String {
         return AgentDockHtmlRenderer.actionResponseJson(
             AgentDockHtmlRenderer.ActionResponse(
-                state = viewState(forceDiscovery = false),
+                state = viewState(forceDiscovery = forceDiscovery),
                 query = query,
                 error = error
             )
@@ -141,9 +228,9 @@ class AgentDockPanel(
         }
         val providerList = providerRegistry.listProviders()
         val providers = providerList.associateBy { it.id }
-        val sessions = service.listSessions(includeArchived = true)
+        val sessions = service.listSessions(includeArchived = true, discover = false)
             .map { session -> session.toViewItem(providers[session.providerId]) }
-        val count = service.listSessions(includeArchived = false).size
+        val count = service.listSessions(includeArchived = false, discover = false).size
         updateToolWindowPresentation(count)
         return AgentDockHtmlRenderer.ViewState(
             sessions = sessions,
@@ -315,5 +402,9 @@ class AgentDockPanel(
         failure?.let { throw it }
         @Suppress("UNCHECKED_CAST")
         return result as T
+    }
+
+    companion object {
+        private const val AUTO_REFRESH_INTERVAL_MS = 180_000
     }
 }

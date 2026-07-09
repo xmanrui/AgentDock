@@ -47,9 +47,12 @@ class AgentSessionProjectService(private val project: Project) : PersistentState
         query: String = "",
         providerId: String? = null,
         status: AgentSessionStatus? = null,
-        includeArchived: Boolean = false
+        includeArchived: Boolean = false,
+        discover: Boolean = true
     ): List<AgentSession> {
-        syncDiscoveredSessions()
+        if (discover) {
+            syncDiscoveredSessions()
+        }
         val registry = CLIProviderRegistry()
         return SessionFilter.filter(
             sessions = getState().sessions,
@@ -282,7 +285,7 @@ class AgentSessionProjectService(private val project: Project) : PersistentState
     }
 
     companion object {
-        private const val DISCOVERY_THROTTLE_MS = 30_000L
+        private const val DISCOVERY_THROTTLE_MS = 60_000L
 
         fun getInstance(project: Project): AgentSessionProjectService =
             project.getService(AgentSessionProjectService::class.java)
