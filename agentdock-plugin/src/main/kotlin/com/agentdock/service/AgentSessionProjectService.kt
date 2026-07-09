@@ -13,6 +13,7 @@ import com.agentdock.storage.StateMigration
 import com.agentdock.terminal.CommandRenderResult
 import com.agentdock.terminal.CommandRenderer
 import com.agentdock.terminal.JetBrainsTerminalLauncher
+import com.agentdock.terminal.TerminalCommandExitMarker
 import com.agentdock.terminal.TerminalLaunchResult
 import com.agentdock.terminal.TerminalLauncher
 import com.agentdock.terminal.TerminalTabPresentation
@@ -27,12 +28,18 @@ import com.intellij.openapi.components.Storage
 import com.intellij.openapi.components.StoragePathMacros
 import com.intellij.openapi.project.Project
 import java.io.File
+import java.util.UUID
+import java.util.concurrent.CopyOnWriteArrayList
+import javax.swing.Timer
 
 @Service(Service.Level.PROJECT)
 @State(name = "AgentDockProjectState", storages = [Storage(StoragePathMacros.WORKSPACE_FILE)])
 class AgentSessionProjectService(private val project: Project) : PersistentStateComponent<AgentDockProjectState> {
     private var myState = AgentDockProjectState()
     private var lastDiscoveryAt = 0L
+    private val terminalOpenTokensBySessionId: MutableMap<String, MutableSet<String>> = mutableMapOf()
+    private val exitMarkerTimersByToken: MutableMap<String, Timer> = mutableMapOf()
+    private val terminalStateListeners = CopyOnWriteArrayList<() -> Unit>()
 
     private val repository: AgentSessionRepository
         get() = AgentSessionRepository(getState())
@@ -41,6 +48,7 @@ class AgentSessionProjectService(private val project: Project) : PersistentState
 
     override fun loadState(state: AgentDockProjectState) {
         myState = StateMigration.migrateProjectState(state)
+        resetTransientTerminalState()
     }
 
     fun listSessions(
@@ -65,6 +73,15 @@ class AgentSessionProjectService(private val project: Project) : PersistentState
     }
 
     fun findSession(sessionId: String): AgentSession? = repository.find(sessionId)
+
+    fun isTerminalOpen(sessionId: String): Boolean = synchronized(terminalOpenTokensBySessionId) {
+        terminalOpenTokensBySessionId[sessionId]?.isNotEmpty() == true
+    }
+
+    fun addTerminalStateListener(listener: () -> Unit): () -> Unit {
+        terminalStateListeners.add(listener)
+        return { terminalStateListeners.remove(listener) }
+    }
 
     fun syncDiscoveredSessions(force: Boolean = false): Int {
         val now = System.currentTimeMillis()
@@ -119,6 +136,7 @@ class AgentSessionProjectService(private val project: Project) : PersistentState
         val detection = registry.detect(providerId)
         if (detection !is ProviderDetectionResult.Available) {
             session.status = AgentSessionStatus.MissingCli
+            clearTerminalOpenState(session.id)
             session.lastError = detectionMessage(detection)
             repository.update(session)
             AgentDockNotifications.warning(project, "${provider.displayName} missing", session.lastError.orEmpty())
@@ -146,6 +164,7 @@ class AgentSessionProjectService(private val project: Project) : PersistentState
         val detection = registry.detect(provider.id)
         if (detection !is ProviderDetectionResult.Available) {
             session.status = AgentSessionStatus.MissingCli
+            clearTerminalOpenState(session.id)
             session.lastError = detectionMessage(detection)
             repository.update(session)
             AgentDockNotifications.warning(project, "${provider.displayName} missing", session.lastError.orEmpty())
@@ -180,6 +199,9 @@ class AgentSessionProjectService(private val project: Project) : PersistentState
         val session = repository.find(sessionId) ?: return false
         session.archived = !session.archived
         session.status = if (session.archived) AgentSessionStatus.Archived else AgentSessionStatus.Restorable
+        if (session.archived) {
+            clearTerminalOpenState(session.id)
+        }
         session.updatedAt = System.currentTimeMillis()
         repository.update(session)
         return true
@@ -214,18 +236,30 @@ class AgentSessionProjectService(private val project: Project) : PersistentState
             }
         }
 
+        val terminalToken = UUID.randomUUID().toString()
+        val exitMarkerFile = TerminalCommandExitMarker.markerFile(terminalToken)
+            .takeIf { TerminalCommandExitMarker.supports(context.os) }
+            ?.also { marker ->
+                marker.parentFile?.mkdirs()
+                marker.delete()
+            }
+        val launchCommand = exitMarkerFile
+            ?.let { TerminalCommandExitMarker.wrap(command, it, context.os) }
+            ?: command
         val terminalResult = terminalLauncher.launch(
-            command,
+            launchCommand,
             session.cwd,
             TerminalTabPresentation(
                 title = SessionTextSanitizer.title(session.name, "Agent session"),
-                providerId = provider.id
+                providerId = provider.id,
+                onClosed = { markTerminalClosed(session.id, terminalToken) }
             )
         )
         return when (terminalResult) {
             is TerminalLaunchResult.Failed -> markFailure(session, terminalResult.message)
             is TerminalLaunchResult.ClipboardFallback -> {
-                session.status = AgentSessionStatus.Active
+                clearTerminalOpenState(session.id)
+                session.status = if (session.archived) AgentSessionStatus.Archived else AgentSessionStatus.Restorable
                 session.lastError = null
                 session.updatedAt = System.currentTimeMillis()
                 repository.update(session)
@@ -233,6 +267,10 @@ class AgentSessionProjectService(private val project: Project) : PersistentState
                 AgentSessionOperationResult.Success(session, terminalResult)
             }
             is TerminalLaunchResult.Sent -> {
+                markTerminalOpen(session.id, terminalToken)
+                if (exitMarkerFile != null) {
+                    watchExitMarker(session.id, terminalToken, exitMarkerFile)
+                }
                 session.status = AgentSessionStatus.Active
                 session.lastError = null
                 session.updatedAt = System.currentTimeMillis()
@@ -243,6 +281,7 @@ class AgentSessionProjectService(private val project: Project) : PersistentState
     }
 
     private fun markFailure(session: AgentSession, message: String): AgentSessionOperationResult.Failure {
+        clearTerminalOpenState(session.id)
         session.status = AgentSessionStatus.Error
         session.lastError = message
         session.updatedAt = System.currentTimeMillis()
@@ -270,7 +309,7 @@ class AgentSessionProjectService(private val project: Project) : PersistentState
             existing.name = discovered.name
         }
         existing.providerId = discovered.providerId
-        if (!existing.archived && existing.status != AgentSessionStatus.Active) {
+        if (!existing.archived && !isTerminalOpen(existing.id)) {
             existing.status = AgentSessionStatus.Restorable
         }
         existing.cwd = discovered.cwd
@@ -284,8 +323,95 @@ class AgentSessionProjectService(private val project: Project) : PersistentState
         }
     }
 
+    private fun resetTransientTerminalState() {
+        synchronized(terminalOpenTokensBySessionId) {
+            terminalOpenTokensBySessionId.clear()
+        }
+        stopAllExitMarkerWatchers()
+        myState.sessions.forEach { session ->
+            if (!session.archived && session.status == AgentSessionStatus.Active) {
+                session.status = AgentSessionStatus.Restorable
+            }
+        }
+    }
+
+    private fun markTerminalOpen(sessionId: String, token: String) {
+        synchronized(terminalOpenTokensBySessionId) {
+            terminalOpenTokensBySessionId.getOrPut(sessionId) { mutableSetOf() }.add(token)
+        }
+    }
+
+    private fun markTerminalClosed(sessionId: String, token: String) {
+        stopExitMarkerWatcher(token)
+        TerminalCommandExitMarker.markerFile(token).delete()
+        val hasRemainingOpenTerminals = synchronized(terminalOpenTokensBySessionId) {
+            val tokens = terminalOpenTokensBySessionId[sessionId] ?: return@synchronized false
+            tokens.remove(token)
+            if (tokens.isEmpty()) {
+                terminalOpenTokensBySessionId.remove(sessionId)
+                false
+            } else {
+                true
+            }
+        }
+        if (!hasRemainingOpenTerminals) {
+            repository.find(sessionId)?.let { session ->
+                if (!session.archived && session.status == AgentSessionStatus.Active) {
+                    session.status = AgentSessionStatus.Restorable
+                    repository.update(session)
+                }
+            }
+        }
+        notifyTerminalStateChanged()
+    }
+
+    private fun clearTerminalOpenState(sessionId: String) {
+        val tokens = synchronized(terminalOpenTokensBySessionId) {
+            terminalOpenTokensBySessionId.remove(sessionId)
+        }.orEmpty()
+        tokens.forEach { token ->
+            stopExitMarkerWatcher(token)
+            TerminalCommandExitMarker.markerFile(token).delete()
+        }
+    }
+
+    private fun watchExitMarker(sessionId: String, token: String, markerFile: File) {
+        val timer = Timer(EXIT_MARKER_POLL_MS) {
+            if (markerFile.isFile) {
+                markTerminalClosed(sessionId, token)
+            }
+        }.apply {
+            isRepeats = true
+        }
+        synchronized(exitMarkerTimersByToken) {
+            exitMarkerTimersByToken.remove(token)?.stop()
+            exitMarkerTimersByToken[token] = timer
+        }
+        timer.start()
+    }
+
+    private fun stopExitMarkerWatcher(token: String) {
+        synchronized(exitMarkerTimersByToken) {
+            exitMarkerTimersByToken.remove(token)
+        }?.stop()
+    }
+
+    private fun stopAllExitMarkerWatchers() {
+        val timers = synchronized(exitMarkerTimersByToken) {
+            exitMarkerTimersByToken.values.toList().also {
+                exitMarkerTimersByToken.clear()
+            }
+        }
+        timers.forEach { it.stop() }
+    }
+
+    private fun notifyTerminalStateChanged() {
+        terminalStateListeners.forEach { listener -> listener() }
+    }
+
     companion object {
         private const val DISCOVERY_THROTTLE_MS = 60_000L
+        private const val EXIT_MARKER_POLL_MS = 1_000
 
         fun getInstance(project: Project): AgentSessionProjectService =
             project.getService(AgentSessionProjectService::class.java)

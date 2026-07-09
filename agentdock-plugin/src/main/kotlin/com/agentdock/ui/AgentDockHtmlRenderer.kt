@@ -24,6 +24,7 @@ object AgentDockHtmlRenderer {
         val summary: String,
         val statusKey: String,
         val statusLabel: String,
+        val terminalOpen: Boolean = false,
         val updatedLabel: String,
         val pinned: Boolean,
         val archived: Boolean
@@ -297,55 +298,22 @@ object AgentDockHtmlRenderer {
                   text-overflow: ellipsis;
                 }
 
-                .status {
-                  height: 22px;
+                .terminal-indicator {
+                  width: 18px;
+                  height: 18px;
                   display: inline-flex;
                   align-items: center;
-                  gap: 5px;
-                  padding: 0 7px;
+                  justify-content: center;
                   border-radius: 999px;
-                  font-size: 11px;
-                  font-weight: 820;
-                  border: 1px solid transparent;
-                  white-space: nowrap;
                 }
 
-                .status::before {
+                .terminal-indicator::before {
                   content: "";
-                  width: 7px;
-                  height: 7px;
+                  width: 8px;
+                  height: 8px;
                   border-radius: 999px;
-                  background: currentColor;
-                }
-
-                .status.active {
-                  color: var(--green);
-                  background: var(--green-soft);
-                  border-color: rgba(104, 217, 130, .35);
-                }
-
-                .status.restorable {
-                  color: var(--blue);
-                  background: var(--blue-soft);
-                  border-color: rgba(115, 167, 255, .35);
-                }
-
-                .status.missing {
-                  color: var(--yellow);
-                  background: rgba(232, 183, 93, .13);
-                  border-color: rgba(232, 183, 93, .36);
-                }
-
-                .status.error {
-                  color: var(--red);
-                  background: rgba(240, 107, 115, .13);
-                  border-color: rgba(240, 107, 115, .36);
-                }
-
-                .status.archived {
-                  color: #9aa39a;
-                  background: rgba(255, 255, 255, .05);
-                  border-color: var(--line);
+                  background: var(--green);
+                  box-shadow: 0 0 0 3px var(--green-soft);
                 }
 
                 .session-summary {
@@ -518,9 +486,9 @@ object AgentDockHtmlRenderer {
                     return '<span class="logo" aria-hidden="true"></span>';
                   }
 
-                  function statusClass(item) {
-                    if (item.statusKey === "missing-cli") return "missing";
-                    return item.statusKey;
+                  function renderTerminalIndicator(item) {
+                    if (!item.terminalOpen) return "";
+                    return '<span class="terminal-indicator" title="Terminal open" aria-label="Terminal open" role="img"></span>';
                   }
 
                   function providerOptions() {
@@ -589,7 +557,7 @@ object AgentDockHtmlRenderer {
                         '<div class="session-copy">' +
                           '<div class="session-name" title="' + attr(item.title) + '">' + escapeHtml(item.title) + '</div>' +
                         '</div>' +
-                        '<span class="status ' + attr(statusClass(item)) + '">' + escapeHtml(item.statusLabel) + '</span>' +
+                        renderTerminalIndicator(item) +
                       '</div>' +
                       '<div class="session-summary">' + escapeHtml(item.summary || item.title || "No summary captured yet") + '</div>' +
                       '<div class="session-footer">' +

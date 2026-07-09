@@ -23,6 +23,7 @@ class AgentDockHtmlRendererTest {
                         summary = "Match the prototype page.",
                         statusKey = "restorable",
                         statusLabel = "Restorable",
+                        terminalOpen = false,
                         updatedLabel = "2分钟前",
                         pinned = false,
                         archived = false
@@ -33,6 +34,10 @@ class AgentDockHtmlRendererTest {
         )
 
         assertContains(html, "session-card")
+        assertContains(html, "terminalOpen")
+        assertContains(html, "renderTerminalIndicator")
+        assertContains(html, "class=\"terminal-indicator\"")
+        assertContains(html, "if (!item.terminalOpen) return \"\";")
         assertContains(html, "provider-filters")
         assertContains(html, "data-provider=\"all\"")
         assertContains(html, "provider-count")
@@ -70,6 +75,9 @@ class AgentDockHtmlRendererTest {
         assertFalse(html.contains("session-meta"))
         assertFalse(html.contains("providerName) + ' · '"))
         assertFalse(html.contains("data-status"))
+        assertFalse(html.contains("statusClass"))
+        assertFalse(html.contains("escapeHtml(item.statusLabel) + '</span>'"))
+        assertFalse(html.contains("class=\"status "))
         assertFalse(html.contains("cwd", ignoreCase = true))
         assertFalse(html.contains("shell", ignoreCase = true))
         assertFalse(html.contains("Context", ignoreCase = true))

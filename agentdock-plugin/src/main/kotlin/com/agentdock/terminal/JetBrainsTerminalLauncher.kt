@@ -8,9 +8,12 @@ import com.intellij.openapi.wm.ToolWindow
 import com.intellij.openapi.wm.ToolWindowManager
 import com.intellij.terminal.ui.TerminalWidget
 import com.intellij.ui.content.Content
+import com.intellij.ui.content.ContentManagerEvent
+import com.intellij.ui.content.ContentManagerListener
 import org.jetbrains.plugins.terminal.ShellTerminalWidget
 import org.jetbrains.plugins.terminal.TerminalToolWindowManager
 import java.io.File
+import java.util.concurrent.atomic.AtomicBoolean
 import java.util.concurrent.atomic.AtomicReference
 import javax.swing.Icon
 import javax.swing.Timer
@@ -29,7 +32,10 @@ class JetBrainsTerminalLauncher(private val project: Project) : TerminalLauncher
                 applyTabPresentation(terminalWidget, presentation.providerId, fullTitle)
                 val widget = ShellTerminalWidget.toShellJediTermWidgetOrThrow(terminalWidget)
                 widget.executeCommand(command)
-                applyTabPresentation(terminalWidget, presentation.providerId, fullTitle)
+                val content = applyTabPresentation(terminalWidget, presentation.providerId, fullTitle)
+                if (content != null && presentation.onClosed != null) {
+                    registerContentClosedListener(content, presentation.onClosed)
+                }
             }
             TerminalLaunchResult.Sent("Command sent to terminal tab: $fullTitle")
         } catch (error: Throwable) {
@@ -64,14 +70,15 @@ class JetBrainsTerminalLauncher(private val project: Project) : TerminalLauncher
         return method.invoke(manager, cwd, tabTitle, true, true) as TerminalWidget
     }
 
-    private fun applyTabPresentation(terminalWidget: TerminalWidget, providerId: String?, fullTitle: String) {
+    private fun applyTabPresentation(terminalWidget: TerminalWidget, providerId: String?, fullTitle: String): Content? {
         val manager = TerminalToolWindowManager.getInstance(project)
         val content = runCatching { manager.getContainer(terminalWidget)?.content }.getOrNull()
             ?: findTerminalContent(manager, terminalWidget)
-            ?: return
+            ?: return null
 
         applyContentPresentation(content, providerId, fullTitle)
         reapplyContentPresentation(content, providerId, fullTitle)
+        return content
     }
 
     private fun applyContentPresentation(content: Content, providerId: String?, fullTitle: String) {
@@ -105,6 +112,25 @@ class JetBrainsTerminalLauncher(private val project: Project) : TerminalLauncher
     private fun findTerminalContent(manager: TerminalToolWindowManager, terminalWidget: TerminalWidget): Content? {
         return manager.toolWindow.contentManager.contents.firstOrNull { content ->
             TerminalToolWindowManager.findWidgetByContent(content) == terminalWidget
+        }
+    }
+
+    private fun registerContentClosedListener(content: Content, onClosed: () -> Unit) {
+        val manager = content.manager ?: return
+        val notified = AtomicBoolean(false)
+        val listener = object : ContentManagerListener {
+            override fun contentRemoved(event: ContentManagerEvent) {
+                if (event.content != content) return
+                manager.removeContentManagerListener(this)
+                if (notified.compareAndSet(false, true)) {
+                    onClosed()
+                }
+            }
+        }
+        manager.addContentManagerListener(listener)
+        if (!content.isValid && notified.compareAndSet(false, true)) {
+            manager.removeContentManagerListener(listener)
+            onClosed()
         }
     }
 

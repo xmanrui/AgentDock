@@ -11,8 +11,12 @@ import java.awt.BorderLayout
 import java.awt.Dimension
 import java.awt.FlowLayout
 import java.awt.Font
+import java.awt.Graphics
+import java.awt.Graphics2D
 import java.awt.GridLayout
+import java.awt.RenderingHints
 import javax.swing.JButton
+import javax.swing.JComponent
 import javax.swing.JLabel
 import javax.swing.JPanel
 
@@ -41,7 +45,6 @@ class SessionCardPanel(
             toolTipText = session.name
         }
         val displayStatus = displayStatus(session)
-        val status = pill(statusText(displayStatus), statusColor(displayStatus), statusBackground(displayStatus))
         val top = JPanel(BorderLayout()).apply {
             isOpaque = false
             add(JPanel(FlowLayout(FlowLayout.LEFT, 6, 0)).apply {
@@ -49,7 +52,7 @@ class SessionCardPanel(
                 add(providerBadge)
                 add(title)
             }, BorderLayout.CENTER)
-            add(status, BorderLayout.EAST)
+            terminalIndicator(displayStatus)?.let { add(it, BorderLayout.EAST) }
         }
 
         val meta = JLabel(
@@ -90,33 +93,30 @@ class SessionCardPanel(
         return if (session.archived) AgentSessionStatus.Archived else session.status
     }
 
-    private fun statusText(status: AgentSessionStatus): String {
-        return when (status) {
-            AgentSessionStatus.Active -> "Active"
-            AgentSessionStatus.Restorable -> "Restorable"
-            AgentSessionStatus.MissingCli -> "Missing CLI"
-            AgentSessionStatus.Error -> "Error"
-            AgentSessionStatus.Archived -> "Archived"
-        }
-    }
+    private fun terminalIndicator(status: AgentSessionStatus): JComponent? {
+        if (status != AgentSessionStatus.Active) return null
+        return object : JComponent() {
+            init {
+                preferredSize = Dimension(18, 18)
+                minimumSize = preferredSize
+                maximumSize = preferredSize
+                toolTipText = "Terminal open"
+            }
 
-    private fun statusColor(status: AgentSessionStatus): JBColor {
-        return when (status) {
-            AgentSessionStatus.Active -> JBColor(0x188038, 0x68D982)
-            AgentSessionStatus.Restorable -> JBColor(0x1A73E8, 0x73A7FF)
-            AgentSessionStatus.MissingCli -> JBColor(0xB06000, 0xE8B75D)
-            AgentSessionStatus.Error -> JBColor.RED
-            AgentSessionStatus.Archived -> JBColor.GRAY
-        }
-    }
-
-    private fun statusBackground(status: AgentSessionStatus): JBColor {
-        return when (status) {
-            AgentSessionStatus.Active -> JBColor(0xE6F4EA, 0x263B2C)
-            AgentSessionStatus.Restorable -> JBColor(0xE8F0FE, 0x24364B)
-            AgentSessionStatus.MissingCli -> JBColor(0xFEF7E0, 0x4A3B22)
-            AgentSessionStatus.Error -> JBColor(0xFCE8E6, 0x4A2928)
-            AgentSessionStatus.Archived -> JBColor(0xF1F3F4, 0x36383A)
+            override fun paintComponent(graphics: Graphics) {
+                super.paintComponent(graphics)
+                val g = graphics.create() as Graphics2D
+                try {
+                    g.setRenderingHint(RenderingHints.KEY_ANTIALIASING, RenderingHints.VALUE_ANTIALIAS_ON)
+                    g.color = ACTIVE_DOT
+                    val size = JBUI.scale(8)
+                    val x = (width - size) / 2
+                    val y = (height - size) / 2
+                    g.fillOval(x, y, size, size)
+                } finally {
+                    g.dispose()
+                }
+            }
         }
     }
 
@@ -176,5 +176,6 @@ class SessionCardPanel(
         private val LINE_SOFT = JBColor(0xE5E7EB, 0x29302A)
         private val TEXT_SOFT = JBColor(0x3C4043, 0xC0C8BF)
         private val TEXT_DIM = JBColor(0x5F6368, 0x889287)
+        private val ACTIVE_DOT = JBColor(0x188038, 0x68D982)
     }
 }

@@ -42,6 +42,7 @@ class AgentDockPanel(
     private val providerRegistry = CLIProviderRegistry()
     private val browser: JBCefBrowser? = if (JBCefApp.isSupported()) JBCefBrowser() else null
     private val actionQuery: JBCefJSQuery? = browser?.let { JBCefJSQuery.create(it as JBCefBrowserBase) }
+    private val removeTerminalStateListener: () -> Unit = service.addTerminalStateListener { pushState() }
     private val autoRefreshTimer = Timer(AUTO_REFRESH_INTERVAL_MS) { event ->
         if (component.isShowing) {
             requestBackgroundRefresh()
@@ -82,6 +83,7 @@ class AgentDockPanel(
     }
 
     override fun dispose() {
+        removeTerminalStateListener()
         autoRefreshTimer.stop()
         actionQuery?.dispose()
         browser?.dispose()
@@ -247,6 +249,7 @@ class AgentDockPanel(
             summary = summary,
             statusKey = displayStatus.statusKey(),
             statusLabel = displayStatus.statusLabel(),
+            terminalOpen = service.isTerminalOpen(id),
             updatedLabel = TimeFormatter.relative(updatedAt),
             pinned = pinned,
             archived = archived
