@@ -95,7 +95,6 @@ class AgentDockPanel(
             when (json.string("action")) {
                 "open" -> json.string("id")?.let { openSession(it) }
                 "pin" -> json.string("id")?.let { service.togglePin(it) }
-                "archive" -> json.string("id")?.let { service.toggleArchive(it) }
                 "refresh" -> {
                     requestBackgroundRefresh()
                     return AgentDockHtmlRenderer.refreshPendingResponseJson()

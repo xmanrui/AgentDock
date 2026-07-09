@@ -311,9 +311,33 @@ object AgentDockHtmlRenderer {
                   content: "";
                   width: 8px;
                   height: 8px;
+                  display: block;
                   border-radius: 999px;
+                  background: #69736b;
+                  box-shadow: 0 0 0 3px rgba(255, 255, 255, .045);
+                }
+
+                .terminal-indicator.active::before {
                   background: var(--green);
                   box-shadow: 0 0 0 3px var(--green-soft);
+                  animation: agentdock-terminal-pulse 1.35s ease-in-out infinite;
+                }
+
+                @keyframes agentdock-terminal-pulse {
+                  0%, 100% {
+                    transform: scale(.96);
+                    box-shadow: 0 0 0 3px var(--green-soft);
+                  }
+                  50% {
+                    transform: scale(1.1);
+                    box-shadow: 0 0 0 5px rgba(104, 217, 130, .22);
+                  }
+                }
+
+                @media (prefers-reduced-motion: reduce) {
+                  .terminal-indicator.active::before {
+                    animation: none;
+                  }
                 }
 
                 .session-summary {
@@ -487,8 +511,9 @@ object AgentDockHtmlRenderer {
                   }
 
                   function renderTerminalIndicator(item) {
-                    if (!item.terminalOpen) return "";
-                    return '<span class="terminal-indicator" title="Terminal open" aria-label="Terminal open" role="img"></span>';
+                    var active = item.terminalOpen ? " active" : "";
+                    var label = item.terminalOpen ? "Terminal open" : "Terminal closed";
+                    return '<span class="terminal-indicator' + active + '" title="' + label + '" aria-label="' + label + '" role="img"></span>';
                   }
 
                   function providerOptions() {
@@ -565,7 +590,6 @@ object AgentDockHtmlRenderer {
                         '<div class="session-actions">' +
                           '<button class="session-action" data-action="open" data-id="' + attr(item.id) + '">Open</button>' +
                           '<button class="session-action" data-action="pin" data-id="' + attr(item.id) + '">' + (item.pinned ? "Unpin" : "Pin") + '</button>' +
-                          '<button class="session-action" data-action="archive" data-id="' + attr(item.id) + '">' + (item.archived ? "Unarchive" : "Archive") + '</button>' +
                         '</div>' +
                       '</div>' +
                     '</article>';

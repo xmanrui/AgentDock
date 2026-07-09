@@ -7,6 +7,7 @@ import com.agentdock.util.TimeFormatter
 import com.agentdock.util.SessionTextSanitizer
 import com.intellij.ui.JBColor
 import com.intellij.util.ui.JBUI
+import java.awt.AlphaComposite
 import java.awt.BorderLayout
 import java.awt.Dimension
 import java.awt.FlowLayout
@@ -19,13 +20,13 @@ import javax.swing.JButton
 import javax.swing.JComponent
 import javax.swing.JLabel
 import javax.swing.JPanel
+import javax.swing.Timer
 
 class SessionCardPanel(
     private val session: AgentSession,
     provider: CLIProvider?,
     onOpen: (AgentSession) -> Unit,
-    onPin: (AgentSession) -> Unit,
-    onArchive: (AgentSession) -> Unit
+    onPin: (AgentSession) -> Unit
 ) : JPanel(BorderLayout(0, 8)) {
     init {
         border = javax.swing.BorderFactory.createCompoundBorder(
@@ -52,7 +53,7 @@ class SessionCardPanel(
                 add(providerBadge)
                 add(title)
             }, BorderLayout.CENTER)
-            terminalIndicator(displayStatus)?.let { add(it, BorderLayout.EAST) }
+            add(terminalIndicator(displayStatus), BorderLayout.EAST)
         }
 
         val meta = JLabel(
@@ -81,7 +82,6 @@ class SessionCardPanel(
             isOpaque = false
             add(actionButton("Open") { onOpen(session) })
             add(actionButton(if (session.pinned) "Unpin" else "Pin") { onPin(session) })
-            add(actionButton(if (session.archived) "Unarchive" else "Archive") { onArchive(session) })
         }
 
         add(text, BorderLayout.CENTER)
@@ -93,14 +93,27 @@ class SessionCardPanel(
         return if (session.archived) AgentSessionStatus.Archived else session.status
     }
 
-    private fun terminalIndicator(status: AgentSessionStatus): JComponent? {
-        if (status != AgentSessionStatus.Active) return null
+    private fun terminalIndicator(status: AgentSessionStatus): JComponent {
+        val active = status == AgentSessionStatus.Active
         return object : JComponent() {
+            private val pulseTimer = Timer(120) { repaint() }
+
             init {
                 preferredSize = Dimension(18, 18)
                 minimumSize = preferredSize
                 maximumSize = preferredSize
-                toolTipText = "Terminal open"
+                toolTipText = if (active) "Terminal open" else "Terminal closed"
+                pulseTimer.isRepeats = true
+            }
+
+            override fun addNotify() {
+                super.addNotify()
+                if (active) pulseTimer.start()
+            }
+
+            override fun removeNotify() {
+                pulseTimer.stop()
+                super.removeNotify()
             }
 
             override fun paintComponent(graphics: Graphics) {
@@ -108,10 +121,22 @@ class SessionCardPanel(
                 val g = graphics.create() as Graphics2D
                 try {
                     g.setRenderingHint(RenderingHints.KEY_ANTIALIASING, RenderingHints.VALUE_ANTIALIAS_ON)
-                    g.color = ACTIVE_DOT
                     val size = JBUI.scale(8)
                     val x = (width - size) / 2
                     val y = (height - size) / 2
+                    if (active) {
+                        val phase = (System.currentTimeMillis() % TERMINAL_PULSE_MS).toFloat() / TERMINAL_PULSE_MS
+                        val pulse = if (phase < 0.5f) phase * 2f else (1f - phase) * 2f
+                        val haloSize = JBUI.scale(12) + (JBUI.scale(4) * pulse).toInt()
+                        val haloX = (width - haloSize) / 2
+                        val haloY = (height - haloSize) / 2
+                        val originalComposite = g.composite
+                        g.composite = AlphaComposite.getInstance(AlphaComposite.SRC_OVER, 0.22f - 0.1f * pulse)
+                        g.color = ACTIVE_DOT
+                        g.fillOval(haloX, haloY, haloSize, haloSize)
+                        g.composite = originalComposite
+                    }
+                    g.color = if (active) ACTIVE_DOT else INACTIVE_DOT
                     g.fillOval(x, y, size, size)
                 } finally {
                     g.dispose()
@@ -177,5 +202,7 @@ class SessionCardPanel(
         private val TEXT_SOFT = JBColor(0x3C4043, 0xC0C8BF)
         private val TEXT_DIM = JBColor(0x5F6368, 0x889287)
         private val ACTIVE_DOT = JBColor(0x188038, 0x68D982)
+        private val INACTIVE_DOT = JBColor(0x9AA39A, 0x69736B)
+        private const val TERMINAL_PULSE_MS = 1350
     }
 }
