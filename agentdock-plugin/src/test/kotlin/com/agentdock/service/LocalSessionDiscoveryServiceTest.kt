@@ -29,6 +29,7 @@ class LocalSessionDiscoveryServiceTest {
         assertEquals("更新 AgentDock 插件", sessions.single().name)
         assertEquals(CLIProvider.CODEX_ID, sessions.single().providerId)
         assertEquals(sessionId, sessions.single().providerSessionId)
+        assertTrue(File(sessions.single().historyFilePath).isFile)
     }
 
     @Test
@@ -68,6 +69,7 @@ class LocalSessionDiscoveryServiceTest {
         assertEquals("完全不满足需求啊", sessions.single().name)
         assertEquals(CLIProvider.CLAUDE_CODE_ID, sessions.single().providerId)
         assertEquals(sessionId, sessions.single().providerSessionId)
+        assertTrue(File(sessions.single().historyFilePath).isFile)
     }
 
     @Test

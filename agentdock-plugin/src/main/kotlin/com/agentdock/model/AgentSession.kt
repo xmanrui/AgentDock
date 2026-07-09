@@ -9,6 +9,7 @@ data class AgentSession(
     var status: AgentSessionStatus = AgentSessionStatus.Restorable,
     var cwd: String = "",
     var providerSessionId: String? = null,
+    var historyFilePath: String = "",
     var terminalTabId: String? = null,
     var summary: String = "",
     var linkedFiles: MutableList<String> = mutableListOf(),

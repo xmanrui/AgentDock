@@ -41,7 +41,7 @@ class LocalSessionContentService(
     }
 
     fun load(session: AgentSession): SessionContentPreview {
-        val source = runCatching { findSourceFile(session) }.getOrNull() ?: return fallbackPreview(
+        val source = locateHistoryFile(session) ?: return fallbackPreview(
             session,
             "Full local conversation is not available yet."
         )
@@ -62,7 +62,15 @@ class LocalSessionContentService(
         return preview
     }
 
+    fun locateHistoryFile(session: AgentSession): File? {
+        return runCatching { findSourceFile(session) }.getOrNull()
+    }
+
     private fun findSourceFile(session: AgentSession): File? {
+        session.historyFilePath.takeIf { it.isNotBlank() }
+            ?.let(::File)
+            ?.takeIf { it.isFile }
+            ?.let { return it }
         val providerSessionId = session.providerSessionId?.takeIf { it.isSafeFileName() } ?: return null
         val key = "${session.providerId}:${session.projectPath}:$providerSessionId"
         sourceFiles[key]?.takeIf { it.isFile }?.let { return it }

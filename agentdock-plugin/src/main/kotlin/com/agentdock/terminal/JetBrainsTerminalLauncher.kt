@@ -4,7 +4,6 @@ import com.agentdock.model.CLIProvider
 import com.intellij.openapi.application.ApplicationManager
 import com.intellij.openapi.project.Project
 import com.intellij.openapi.util.IconLoader
-import com.intellij.openapi.wm.ToolWindow
 import com.intellij.openapi.wm.ToolWindowManager
 import com.intellij.terminal.ui.TerminalWidget
 import com.intellij.ui.content.Content
@@ -16,7 +15,6 @@ import java.io.File
 import java.util.concurrent.atomic.AtomicBoolean
 import java.util.concurrent.atomic.AtomicReference
 import javax.swing.Icon
-import javax.swing.Timer
 
 class JetBrainsTerminalLauncher(private val project: Project) : TerminalLauncher {
     override fun launch(command: String, cwd: String, presentation: TerminalTabPresentation): TerminalLaunchResult {
@@ -29,12 +27,38 @@ class JetBrainsTerminalLauncher(private val project: Project) : TerminalLauncher
         return try {
             runOnEdt {
                 val terminalWidget = createShellWidget(cwd, tabTitle)
-                applyTabPresentation(terminalWidget, presentation.providerId, fullTitle)
+                val initialContent = findTerminalContent(terminalWidget)
+                val controllerRef = AtomicReference(
+                    createPresentationController(initialContent, presentation.providerId, fullTitle)
+                )
+                val monitor = presentation.activitySource?.let { source ->
+                    LocalTerminalActivityMonitor(
+                        source = source,
+                        onEvent = { event -> controllerRef.get()?.onActivity(event) }
+                    )
+                }
+                monitor?.start()
                 val widget = ShellTerminalWidget.toShellJediTermWidgetOrThrow(terminalWidget)
-                widget.executeCommand(command)
-                val content = applyTabPresentation(terminalWidget, presentation.providerId, fullTitle)
-                if (content != null && presentation.onClosed != null) {
-                    registerContentClosedListener(content, presentation.onClosed)
+                try {
+                    widget.executeCommand(command)
+                } catch (error: Throwable) {
+                    monitor?.stop()
+                    controllerRef.get()?.dispose()
+                    throw error
+                }
+                val content = initialContent ?: findTerminalContent(terminalWidget)
+                val finalController = controllerRef.get() ?: createPresentationController(
+                    content, presentation.providerId, fullTitle
+                )?.also(controllerRef::set)
+                if (content != null) {
+                    registerContentClosedListener(content) {
+                        monitor?.stop()
+                        finalController?.dispose()
+                        presentation.onClosed?.invoke()
+                    }
+                } else {
+                    monitor?.stop()
+                    finalController?.dispose()
                 }
             }
             TerminalLaunchResult.Sent("Command sent to terminal tab: $fullTitle")
@@ -70,49 +94,34 @@ class JetBrainsTerminalLauncher(private val project: Project) : TerminalLauncher
         return method.invoke(manager, cwd, tabTitle, true, true) as TerminalWidget
     }
 
-    private fun applyTabPresentation(terminalWidget: TerminalWidget, providerId: String?, fullTitle: String): Content? {
+    private fun findTerminalContent(terminalWidget: TerminalWidget): Content? {
         val manager = TerminalToolWindowManager.getInstance(project)
-        val content = runCatching { manager.getContainer(terminalWidget)?.content }.getOrNull()
-            ?: findTerminalContent(manager, terminalWidget)
-            ?: return null
-
-        applyContentPresentation(content, providerId, fullTitle)
-        reapplyContentPresentation(content, providerId, fullTitle)
-        return content
+        return runCatching { manager.getContainer(terminalWidget)?.content }.getOrNull()
+            ?: findTerminalContentByWidget(manager, terminalWidget)
     }
 
-    private fun applyContentPresentation(content: Content, providerId: String?, fullTitle: String) {
-        content.description = fullTitle
-        content.toolwindowTitle = fullTitle
-
-        val icon = ProviderIcons.forProvider(providerId) ?: return
-        content.putUserData(ToolWindow.SHOW_CONTENT_ICON, true)
-        content.icon = icon
-        content.popupIcon = icon
-    }
-
-    private fun reapplyContentPresentation(content: Content, providerId: String?, fullTitle: String) {
-        ApplicationManager.getApplication().invokeLater {
-            if (content.isValid) {
-                applyContentPresentation(content, providerId, fullTitle)
-            }
-        }
-        listOf(250, 1_000).forEach { delay ->
-            Timer(delay) {
-                if (content.isValid) {
-                    applyContentPresentation(content, providerId, fullTitle)
-                }
-            }.apply {
-                isRepeats = false
-                start()
-            }
-        }
-    }
-
-    private fun findTerminalContent(manager: TerminalToolWindowManager, terminalWidget: TerminalWidget): Content? {
+    private fun findTerminalContentByWidget(
+        manager: TerminalToolWindowManager,
+        terminalWidget: TerminalWidget
+    ): Content? {
         return manager.toolWindow.contentManager.contents.firstOrNull { content ->
             TerminalToolWindowManager.findWidgetByContent(content) == terminalWidget
         }
+    }
+
+    private fun createPresentationController(
+        content: Content?,
+        providerId: String?,
+        fullTitle: String
+    ): TerminalTaskPresentationController? {
+        if (content == null) return null
+        val icon = ProviderIcons.forProvider(providerId)
+        if (icon == null) {
+            content.description = "$fullTitle - ${TerminalTaskState.Idle.label}"
+            content.toolwindowTitle = fullTitle
+            return null
+        }
+        return TerminalTaskPresentationController(content, icon, fullTitle)
     }
 
     private fun registerContentClosedListener(content: Content, onClosed: () -> Unit) {

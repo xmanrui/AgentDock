@@ -7,7 +7,7 @@ plugins {
 }
 
 group = "com.agentdock"
-version = "0.1.52"
+version = "0.1.53"
 
 repositories {
     maven("https://maven.aliyun.com/repository/public")
@@ -56,7 +56,7 @@ intellijPlatform {
         """.trimIndent()
 
         changeNotes = """
-            Shows the conversation preview only when hovering a session title.
+            Adds working, ready-for-review, and idle states to AI terminal tab logos.
         """.trimIndent()
     }
 

@@ -17,6 +17,7 @@ import com.agentdock.terminal.TerminalCommandExitMarker
 import com.agentdock.terminal.TerminalLaunchResult
 import com.agentdock.terminal.TerminalLauncher
 import com.agentdock.terminal.TerminalTabPresentation
+import com.agentdock.terminal.TerminalActivitySource
 import com.agentdock.util.IdGenerator
 import com.agentdock.util.OperatingSystem
 import com.agentdock.util.ProjectIdentity
@@ -40,6 +41,7 @@ class AgentSessionProjectService(private val project: Project) : PersistentState
     private val terminalOpenTokensBySessionId: MutableMap<String, MutableSet<String>> = mutableMapOf()
     private val exitMarkerTimersByToken: MutableMap<String, Timer> = mutableMapOf()
     private val terminalStateListeners = CopyOnWriteArrayList<() -> Unit>()
+    private val sessionContentService = LocalSessionContentService()
 
     private val repository: AgentSessionRepository
         get() = AgentSessionRepository(getState())
@@ -237,6 +239,7 @@ class AgentSessionProjectService(private val project: Project) : PersistentState
         }
 
         val terminalToken = UUID.randomUUID().toString()
+        val historyFilePath = resolveHistoryFilePath(session)
         val exitMarkerFile = TerminalCommandExitMarker.markerFile(terminalToken)
             .takeIf { TerminalCommandExitMarker.supports(context.os) }
             ?.also { marker ->
@@ -252,6 +255,12 @@ class AgentSessionProjectService(private val project: Project) : PersistentState
             TerminalTabPresentation(
                 title = SessionTextSanitizer.title(session.name, "Agent session"),
                 providerId = provider.id,
+                activitySource = historyFilePath.takeIf { it.isNotBlank() }?.let {
+                    TerminalActivitySource(
+                        providerId = provider.id,
+                        historyFilePath = it
+                    )
+                },
                 onClosed = { markTerminalClosed(session.id, terminalToken) }
             )
         )
@@ -290,6 +299,16 @@ class AgentSessionProjectService(private val project: Project) : PersistentState
         return AgentSessionOperationResult.Failure(session, message)
     }
 
+    private fun resolveHistoryFilePath(session: AgentSession): String {
+        if (session.historyFilePath.isNotBlank()) return session.historyFilePath
+        val historyFilePath = sessionContentService.locateHistoryFile(session)?.absolutePath.orEmpty()
+        if (historyFilePath.isNotBlank()) {
+            session.historyFilePath = historyFilePath
+            repository.update(session)
+        }
+        return historyFilePath
+    }
+
     private fun detectionMessage(result: ProviderDetectionResult): String {
         return when (result) {
             is ProviderDetectionResult.Available -> "Available: ${result.executablePath}"
@@ -314,6 +333,7 @@ class AgentSessionProjectService(private val project: Project) : PersistentState
         }
         existing.cwd = discovered.cwd
         existing.providerSessionId = discovered.providerSessionId
+        existing.historyFilePath = discovered.historyFilePath
         existing.summary = discovered.summary
         existing.linkedFiles = discovered.linkedFiles
         existing.createdAt = minOf(existing.createdAt.takeIf { it > 0L } ?: discovered.createdAt, discovered.createdAt)
