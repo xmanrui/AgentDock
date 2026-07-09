@@ -35,6 +35,9 @@ class AgentDockHtmlRendererTest {
 
         assertContains(html, "session-card")
         assertContains(html, "data-session-id")
+        assertContains(html, "data-session-preview-id")
+        assertContains(html, "session-name[data-session-preview-id]")
+        assertContains(html, "title.closest")
         assertContains(html, "scheduleSessionPreview")
         assertContains(html, "hideSessionPreview")
         assertContains(html, "preview-show")
@@ -104,6 +107,8 @@ class AgentDockHtmlRendererTest {
         assertFalse(html.contains("Archive"))
         assertFalse(html.contains("Unarchive"))
         assertFalse(html.contains("data-action=\"archive\""))
+        assertFalse(html.contains("root.querySelectorAll(\".session-card[data-session-id]\")"))
+        assertFalse(html.contains("class=\"session-name\" title="))
         assertFalse(html.contains("从当前文件"))
         assertFalse(html.contains("data-action=\"current-file\""))
         assertFalse(html.contains("footer-strip"))

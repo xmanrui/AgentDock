@@ -586,7 +586,7 @@ object AgentDockHtmlRenderer {
                       '<div class="session-top">' +
                         providerLogo(item.providerId) +
                         '<div class="session-copy">' +
-                          '<div class="session-name" title="' + attr(item.title) + '">' + escapeHtml(item.title) + '</div>' +
+                          '<div class="session-name" data-session-preview-id="' + attr(item.id) + '" aria-label="' + attr(item.title) + '">' + escapeHtml(item.title) + '</div>' +
                         '</div>' +
                         renderTerminalIndicator(item) +
                       '</div>' +
@@ -687,11 +687,11 @@ object AgentDockHtmlRenderer {
                         send(action, {id: id});
                       });
                     });
-                    root.querySelectorAll(".session-card[data-session-id]").forEach(function (card) {
-                      card.addEventListener("mouseenter", function () {
-                        scheduleSessionPreview(card);
+                    root.querySelectorAll(".session-name[data-session-preview-id]").forEach(function (title) {
+                      title.addEventListener("mouseenter", function () {
+                        scheduleSessionPreview(title);
                       });
-                      card.addEventListener("mouseleave", function () {
+                      title.addEventListener("mouseleave", function () {
                         hideSessionPreview(false);
                       });
                     });
@@ -731,16 +731,18 @@ object AgentDockHtmlRenderer {
                     tooltip.classList.remove("show");
                   }
 
-                  function scheduleSessionPreview(card) {
+                  function scheduleSessionPreview(title) {
                     if (sessionPreviewTimer) {
                       window.clearTimeout(sessionPreviewTimer);
                     }
-                    var sessionId = card.getAttribute("data-session-id") || "";
+                    var card = title.closest(".session-card[data-session-id]");
+                    var sessionId = title.getAttribute("data-session-preview-id") || "";
+                    if (!card) return;
                     if (!sessionId) return;
                     hoveredSessionId = sessionId;
                     sessionPreviewTimer = window.setTimeout(function () {
                       sessionPreviewTimer = null;
-                      if (hoveredSessionId !== sessionId || !card.isConnected) return;
+                      if (hoveredSessionId !== sessionId || !title.isConnected || !card.isConnected) return;
                       var rect = card.getBoundingClientRect();
                       requestedPreviewId = sessionId;
                       send("preview-show", {

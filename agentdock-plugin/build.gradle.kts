@@ -7,7 +7,7 @@ plugins {
 }
 
 group = "com.agentdock"
-version = "0.1.51"
+version = "0.1.52"
 
 repositories {
     maven("https://maven.aliyun.com/repository/public")
@@ -56,7 +56,7 @@ intellijPlatform {
         """.trimIndent()
 
         changeNotes = """
-            Adds a fast hover conversation preview beside each session card.
+            Shows the conversation preview only when hovering a session title.
         """.trimIndent()
     }
 
