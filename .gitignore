@@ -1,0 +1,24 @@
+# macOS
+.DS_Store
+
+# IntelliJ / JetBrains local project state
+.idea/
+.intellijPlatform/
+
+# Gradle
+.gradle/
+build/
+**/build/
+
+# Kotlin
+.kotlin/
+
+# Logs
+*.log
+
+# Local environment files
+.env
+.env.*
+
+# Plugin sandbox and generated distributions
+*.zip

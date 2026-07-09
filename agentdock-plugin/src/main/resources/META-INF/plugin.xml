@@ -1,0 +1,47 @@
+<idea-plugin>
+    <id>com.agentdock</id>
+    <name>AgentDock</name>
+    <vendor email="support@agentdock.local">AgentDock</vendor>
+
+    <description><![CDATA[
+        AgentDock provides project-level Codex and Claude Code CLI session management inside JetBrains IDEs.
+    ]]></description>
+
+    <depends>com.intellij.modules.platform</depends>
+    <depends>org.jetbrains.plugins.terminal</depends>
+
+    <extensions defaultExtensionNs="com.intellij">
+        <toolWindow
+            id="AgentDock"
+            anchor="right"
+            icon="/icons/agentDock.svg"
+            factoryClass="com.agentdock.ui.AgentDockToolWindowFactory"/>
+
+        <applicationService serviceImplementation="com.agentdock.service.ProviderSettingsService"/>
+        <projectService serviceImplementation="com.agentdock.service.AgentSessionProjectService"/>
+
+        <applicationConfigurable
+            id="agentdock.settings"
+            parentId="tools"
+            displayName="AgentDock"
+            instance="com.agentdock.ui.ProviderSettingsConfigurable"/>
+
+        <notificationGroup id="AgentDock" displayType="BALLOON"/>
+    </extensions>
+
+    <actions>
+        <action id="AgentDock.OpenToolWindow"
+                class="com.agentdock.actions.OpenAgentDockToolWindowAction"
+                text="Open AgentDock"
+                description="Open the AgentDock tool window">
+            <add-to-group group-id="ToolsMenu" anchor="last"/>
+        </action>
+
+        <action id="AgentDock.OpenSettings"
+                class="com.agentdock.actions.OpenProviderSettingsAction"
+                text="AgentDock Settings"
+                description="Open AgentDock provider settings">
+            <add-to-group group-id="ToolsMenu" anchor="last"/>
+        </action>
+    </actions>
+</idea-plugin>

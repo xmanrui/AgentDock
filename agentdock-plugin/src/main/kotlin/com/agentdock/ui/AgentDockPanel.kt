@@ -1,0 +1,249 @@
+package com.agentdock.ui
+
+import com.agentdock.model.AgentSession
+import com.agentdock.model.AgentSessionStatus
+import com.agentdock.model.CLIProvider
+import com.agentdock.model.ProviderDetectionResult
+import com.agentdock.notification.AgentDockNotifications
+import com.agentdock.service.AgentSessionOperationResult
+import com.agentdock.service.AgentSessionProjectService
+import com.agentdock.service.CLIProviderRegistry
+import com.agentdock.util.SessionTextSanitizer
+import com.agentdock.util.TimeFormatter
+import com.google.gson.JsonObject
+import com.google.gson.JsonParser
+import com.intellij.openapi.Disposable
+import com.intellij.openapi.application.ApplicationManager
+import com.intellij.openapi.fileEditor.FileEditorManager
+import com.intellij.openapi.options.ShowSettingsUtil
+import com.intellij.openapi.project.Project
+import com.intellij.ui.jcef.JBCefApp
+import com.intellij.ui.jcef.JBCefBrowser
+import com.intellij.ui.jcef.JBCefBrowserBase
+import com.intellij.ui.jcef.JBCefJSQuery
+import java.awt.BorderLayout
+import java.awt.Color
+import java.awt.Font
+import javax.swing.JComponent
+import javax.swing.JLabel
+import javax.swing.JPanel
+import javax.swing.SwingUtilities
+
+class AgentDockPanel(private val project: Project) : Disposable {
+    private val service = AgentSessionProjectService.getInstance(project)
+    private val providerRegistry = CLIProviderRegistry()
+    private val browser: JBCefBrowser? = if (JBCefApp.isSupported()) JBCefBrowser() else null
+    private val actionQuery: JBCefJSQuery? = browser?.let { JBCefJSQuery.create(it as JBCefBrowserBase) }
+
+    val component: JComponent = browser?.component ?: fallbackComponent()
+
+    init {
+        actionQuery?.addHandler { payload ->
+            JBCefJSQuery.Response(handleAction(payload))
+        }
+        browser?.loadHTML(
+            AgentDockHtmlRenderer.render(
+                initialState = viewState(forceDiscovery = true),
+                bridgeScript = actionQuery?.inject(
+                    "message",
+                    "response => window.AgentDock.receive(response)",
+                    "(code, message) => window.AgentDock.showError(message)"
+                ).orEmpty()
+            )
+        )
+    }
+
+    override fun dispose() {
+        actionQuery?.dispose()
+        browser?.dispose()
+    }
+
+    private fun handleAction(payload: String): String {
+        return try {
+            val json = parsePayload(payload)
+            var query: String? = null
+            when (json.string("action")) {
+                "open" -> json.string("id")?.let { openSession(it) }
+                "pin" -> json.string("id")?.let { service.togglePin(it) }
+                "archive" -> json.string("id")?.let { service.toggleArchive(it) }
+                "current-file" -> query = currentFileName()
+                "settings" -> SwingUtilities.invokeLater { openSettings() }
+                "new" -> SwingUtilities.invokeLater { createSessionAndRefresh() }
+            }
+            actionResponse(query = query)
+        } catch (error: Exception) {
+            actionResponse(error = error.message ?: "AgentDock action failed")
+        }
+    }
+
+    private fun openSession(sessionId: String) {
+        runOnEdt {
+            handleResult(service.resumeSession(sessionId))
+        }
+    }
+
+    private fun createSessionAndRefresh() {
+        val providers = providerRegistry.listEnabledProviders()
+        val dialog = NewSessionDialog(project, providers)
+        if (!dialog.showAndGet()) return
+
+        val result = service.createAndLaunchSession(
+            providerId = dialog.providerId,
+            name = dialog.sessionName,
+            cwd = dialog.cwd,
+            summary = dialog.summary,
+            providerSessionId = dialog.providerSessionId
+        )
+        handleResult(result)
+        pushState()
+    }
+
+    private fun openSettings() {
+        ShowSettingsUtil.getInstance().showSettingsDialog(project, "AgentDock")
+    }
+
+    private fun currentFileName(): String? {
+        return runOnEdt {
+            FileEditorManager.getInstance(project).selectedFiles.firstOrNull()?.name
+        }
+    }
+
+    private fun pushState() {
+        val response = actionResponse()
+        val script = "window.AgentDock && window.AgentDock.receive(${quoteJs(response)});"
+        browser?.cefBrowser?.executeJavaScript(script, browser.cefBrowser.url, 0)
+    }
+
+    private fun actionResponse(query: String? = null, error: String? = null): String {
+        return AgentDockHtmlRenderer.actionResponseJson(
+            AgentDockHtmlRenderer.ActionResponse(
+                state = viewState(forceDiscovery = false),
+                query = query,
+                error = error
+            )
+        )
+    }
+
+    private fun viewState(forceDiscovery: Boolean): AgentDockHtmlRenderer.ViewState {
+        if (forceDiscovery) {
+            service.syncDiscoveredSessions(force = true)
+        }
+        val providers = providerRegistry.listProviders().associateBy { it.id }
+        val sessions = service.listSessions(includeArchived = true)
+            .map { session -> session.toViewItem(providers[session.providerId]) }
+        val count = service.listSessions(includeArchived = false).size
+        return AgentDockHtmlRenderer.ViewState(
+            sessions = sessions,
+            count = count,
+            health = providerHealth(providerRegistry.listProviders())
+        )
+    }
+
+    private fun AgentSession.toViewItem(provider: CLIProvider?): AgentDockHtmlRenderer.SessionItem {
+        val displayStatus = if (archived) AgentSessionStatus.Archived else status
+        val title = SessionTextSanitizer.title(name, fallbackName(providerSessionId))
+        val summary = SessionTextSanitizer.summary(summary)
+            .ifBlank { SessionTextSanitizer.summary(name) }
+            .ifBlank { title }
+        return AgentDockHtmlRenderer.SessionItem(
+            id = id,
+            providerId = providerId,
+            providerName = provider?.displayName ?: providerId,
+            title = title,
+            summary = summary,
+            statusKey = displayStatus.statusKey(),
+            statusLabel = displayStatus.statusLabel(),
+            updatedLabel = TimeFormatter.relative(updatedAt),
+            pinned = pinned,
+            archived = archived
+        )
+    }
+
+    private fun providerHealth(providers: List<CLIProvider>): String {
+        return providers.joinToString(" · ") { provider ->
+            val state = when (providerRegistry.detect(provider.id)) {
+                is ProviderDetectionResult.Available -> "ready"
+                is ProviderDetectionResult.Disabled -> "disabled"
+                is ProviderDetectionResult.Missing -> "missing"
+            }
+            "${provider.displayName} $state"
+        }
+    }
+
+    private fun handleResult(result: AgentSessionOperationResult) {
+        if (result is AgentSessionOperationResult.Failure) {
+            AgentDockNotifications.warning(project, "AgentDock", result.message)
+        }
+    }
+
+    private fun parsePayload(payload: String): JsonObject {
+        return JsonParser.parseString(payload).asJsonObject
+    }
+
+    private fun JsonObject.string(name: String): String? {
+        val value = get(name) ?: return null
+        return if (value.isJsonPrimitive && value.asJsonPrimitive.isString) value.asString else null
+    }
+
+    private fun AgentSessionStatus.statusKey(): String {
+        return when (this) {
+            AgentSessionStatus.Active -> "active"
+            AgentSessionStatus.Restorable -> "restorable"
+            AgentSessionStatus.MissingCli -> "missing-cli"
+            AgentSessionStatus.Error -> "error"
+            AgentSessionStatus.Archived -> "archived"
+        }
+    }
+
+    private fun AgentSessionStatus.statusLabel(): String {
+        return when (this) {
+            AgentSessionStatus.Active -> "Active"
+            AgentSessionStatus.Restorable -> "Restorable"
+            AgentSessionStatus.MissingCli -> "Missing CLI"
+            AgentSessionStatus.Error -> "Error"
+            AgentSessionStatus.Archived -> "Archived"
+        }
+    }
+
+    private fun fallbackName(providerSessionId: String?): String {
+        return providerSessionId?.take(8)?.let { "Agent session $it" } ?: "Agent session"
+    }
+
+    private fun fallbackComponent(): JComponent {
+        return JPanel(BorderLayout()).apply {
+            background = Color(0x1B1F1B)
+            add(
+                JLabel("AgentDock").apply {
+                    foreground = Color(0xEEF2EC)
+                    font = font.deriveFont(Font.BOLD, font.size2D + 2f)
+                    border = javax.swing.BorderFactory.createEmptyBorder(12, 12, 12, 12)
+                },
+                BorderLayout.NORTH
+            )
+        }
+    }
+
+    private fun quoteJs(value: String): String {
+        return "'" + value
+            .replace("\\", "\\\\")
+            .replace("'", "\\'")
+            .replace("\n", "\\n")
+            .replace("\r", "\\r") + "'"
+    }
+
+    private fun <T> runOnEdt(block: () -> T): T {
+        if (SwingUtilities.isEventDispatchThread()) return block()
+        var result: T? = null
+        var failure: Throwable? = null
+        ApplicationManager.getApplication().invokeAndWait {
+            try {
+                result = block()
+            } catch (error: Throwable) {
+                failure = error
+            }
+        }
+        failure?.let { throw it }
+        @Suppress("UNCHECKED_CAST")
+        return result as T
+    }
+}
