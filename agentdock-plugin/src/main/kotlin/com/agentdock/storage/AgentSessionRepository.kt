@@ -1,7 +1,6 @@
 package com.agentdock.storage
 
 import com.agentdock.model.AgentSession
-import com.agentdock.model.AgentSessionStatus
 
 class AgentSessionRepository(private val state: AgentDockProjectState) {
     fun all(includeArchived: Boolean = false): List<AgentSession> {
@@ -30,19 +29,7 @@ class AgentSessionRepository(private val state: AgentDockProjectState) {
 
     companion object {
         val sessionComparator: Comparator<AgentSession> = compareByDescending<AgentSession> { it.pinned }
-            .thenBy { statusRank(it.status, it.archived) }
             .thenByDescending { it.updatedAt }
             .thenByDescending { it.createdAt }
-
-        private fun statusRank(status: AgentSessionStatus, archived: Boolean): Int {
-            if (archived) return 5
-            return when (status) {
-                AgentSessionStatus.Active -> 0
-                AgentSessionStatus.Restorable -> 1
-                AgentSessionStatus.MissingCli -> 2
-                AgentSessionStatus.Error -> 3
-                AgentSessionStatus.Archived -> 5
-            }
-        }
     }
 }

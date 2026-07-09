@@ -9,15 +9,15 @@ import kotlin.test.assertTrue
 
 class AgentSessionRepositoryTest {
     @Test
-    fun `pinned active sessions sort first`() {
+    fun `pinned sessions sort first then sessions sort by latest update`() {
         val state = AgentDockProjectState()
         val repository = AgentSessionRepository(state)
 
-        repository.add(session("old", updatedAt = 1, pinned = false, status = AgentSessionStatus.Active))
+        repository.add(session("old-active", updatedAt = 1, pinned = false, status = AgentSessionStatus.Active))
         repository.add(session("pinned", updatedAt = 2, pinned = true, status = AgentSessionStatus.Restorable))
-        repository.add(session("new", updatedAt = 3, pinned = false, status = AgentSessionStatus.Active))
+        repository.add(session("new-restorable", updatedAt = 3, pinned = false, status = AgentSessionStatus.Restorable))
 
-        assertEquals(listOf("pinned", "new", "old"), repository.all().map { it.id })
+        assertEquals(listOf("pinned", "new-restorable", "old-active"), repository.all().map { it.id })
     }
 
     @Test
