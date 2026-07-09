@@ -16,6 +16,10 @@ import com.intellij.openapi.application.ApplicationManager
 import com.intellij.openapi.options.ShowSettingsUtil
 import com.intellij.openapi.project.Project
 import com.intellij.openapi.wm.ToolWindow
+import com.intellij.openapi.wm.ToolWindowAnchor
+import com.intellij.openapi.wm.ToolWindowManager
+import com.intellij.openapi.wm.ToolWindowType
+import com.intellij.openapi.wm.ex.ToolWindowManagerListener
 import com.intellij.ui.jcef.JBCefApp
 import com.intellij.ui.jcef.JBCefBrowser
 import com.intellij.ui.jcef.JBCefBrowserBase
@@ -43,6 +47,7 @@ class AgentDockPanel(
     private val browser: JBCefBrowser? = if (JBCefApp.isSupported()) JBCefBrowser() else null
     private val actionQuery: JBCefJSQuery? = browser?.let { JBCefJSQuery.create(it as JBCefBrowserBase) }
     private val removeTerminalStateListener: () -> Unit = service.addTerminalStateListener { pushState() }
+    private val standardToolWindowLayout = StandardToolWindowLayout()
     private val autoRefreshTimer = Timer(AUTO_REFRESH_INTERVAL_MS) { event ->
         if (component.isShowing) {
             requestBackgroundRefresh()
@@ -55,10 +60,30 @@ class AgentDockPanel(
     private val refreshInFlight = AtomicBoolean(false)
     private var panelShowing = false
     private var sessionCount: Int = 0
+    private var lastObservedToolWindowVisible: Boolean? = null
 
     val component: JComponent = browser?.component ?: fallbackComponent()
+    private val persistentRightToolWindowLayout = PersistentRightToolWindowLayout(
+        content = component,
+        nativeToolWindowComponent = { if (toolWindow.isDisposed) null else toolWindow.component },
+        onHide = { hidePersistentToolWindow() }
+    )
 
     init {
+        project.messageBus.connect(this).subscribe(
+            ToolWindowManagerListener.TOPIC,
+            object : ToolWindowManagerListener {
+                override fun toolWindowShown(shownToolWindow: ToolWindow) {
+                    if (shownToolWindow.id == toolWindow.id) {
+                        syncToolWindowVisibilityIfChanged()
+                    }
+                }
+
+                override fun stateChanged(toolWindowManager: ToolWindowManager) {
+                    syncToolWindowVisibilityIfChanged()
+                }
+            }
+        )
         actionQuery?.addHandler { payload ->
             JBCefJSQuery.Response(handleAction(payload))
         }
@@ -78,11 +103,14 @@ class AgentDockPanel(
     }
 
     fun attachContent() {
+        lastObservedToolWindowVisible = toolWindow.isVisible
+        scheduleExclusiveRightToolWindowMode()
         updateToolWindowPresentation(sessionCount)
         updateRefreshSchedule()
     }
 
     override fun dispose() {
+        persistentRightToolWindowLayout.dispose()
         removeTerminalStateListener()
         autoRefreshTimer.stop()
         actionQuery?.dispose()
@@ -111,6 +139,7 @@ class AgentDockPanel(
     private fun openSession(sessionId: String) {
         runOnEdt {
             handleResult(service.resumeSession(sessionId))
+            scheduleExclusiveRightToolWindowMode()
         }
     }
 
@@ -127,6 +156,7 @@ class AgentDockPanel(
             providerSessionId = dialog.providerSessionId
         )
         handleResult(result)
+        scheduleExclusiveRightToolWindowMode()
         pushState()
     }
 
@@ -191,6 +221,7 @@ class AgentDockPanel(
             }
             if (!panelShowing) {
                 requestBackgroundRefresh()
+                scheduleExclusiveRightToolWindowMode()
             }
         } else {
             autoRefreshTimer.stop()
@@ -311,6 +342,79 @@ class AgentDockPanel(
         }
     }
 
+    private fun scheduleExclusiveRightToolWindowMode() {
+        ApplicationManager.getApplication().invokeLater {
+            tryApplyExclusiveRightToolWindowMode()
+        }
+        listOf(250, 1_000).forEach { delay ->
+            Timer(delay) {
+                tryApplyExclusiveRightToolWindowMode()
+            }.apply {
+                isRepeats = false
+                start()
+            }
+        }
+    }
+
+    private fun tryApplyExclusiveRightToolWindowMode() {
+        runCatching {
+            if (toolWindow.isDisposed) return
+            standardToolWindowLayout.enable()
+            if (toolWindow.anchor != ToolWindowAnchor.RIGHT) {
+                toolWindow.setAnchor(ToolWindowAnchor.RIGHT, TOOL_WINDOW_CALLBACK)
+            }
+            if (toolWindow.type != ToolWindowType.DOCKED) {
+                toolWindow.setType(ToolWindowType.DOCKED, TOOL_WINDOW_CALLBACK)
+            }
+            if (toolWindow.isAutoHide) {
+                toolWindow.setAutoHide(false)
+            }
+            if (toolWindow.isSplitMode) {
+                toolWindow.setSplitMode(false, TOOL_WINDOW_CALLBACK)
+            }
+            hideOtherRightToolWindows()
+            if (toolWindow.isVisible) {
+                persistentRightToolWindowLayout.show()
+            }
+        }
+    }
+
+    private fun scheduleToolWindowVisibilitySync() {
+        ApplicationManager.getApplication().invokeLater {
+            if (toolWindow.isDisposed) return@invokeLater
+            if (toolWindow.isVisible) {
+                scheduleExclusiveRightToolWindowMode()
+            } else {
+                persistentRightToolWindowLayout.hide()
+            }
+        }
+    }
+
+    private fun syncToolWindowVisibilityIfChanged() {
+        if (toolWindow.isDisposed) return
+        val visible = toolWindow.isVisible
+        if (lastObservedToolWindowVisible == visible) return
+        lastObservedToolWindowVisible = visible
+        scheduleToolWindowVisibilitySync()
+    }
+
+    private fun hidePersistentToolWindow() {
+        persistentRightToolWindowLayout.hide()
+        if (!toolWindow.isDisposed && toolWindow.isVisible) {
+            toolWindow.hide(TOOL_WINDOW_CALLBACK)
+        }
+    }
+
+    private fun hideOtherRightToolWindows() {
+        val manager = ToolWindowManager.getInstance(project)
+        manager.toolWindowIds
+            .asSequence()
+            .filter { id -> id != toolWindow.id }
+            .mapNotNull { id -> manager.getToolWindow(id) }
+            .filter { other -> other.anchor == ToolWindowAnchor.RIGHT && other.isVisible }
+            .forEach { other -> other.hide(TOOL_WINDOW_CALLBACK) }
+    }
+
     private fun parsePayload(payload: String): JsonObject {
         return JsonParser.parseString(payload).asJsonObject
     }
@@ -384,5 +488,6 @@ class AgentDockPanel(
 
     companion object {
         private const val AUTO_REFRESH_INTERVAL_MS = 180_000
+        private val TOOL_WINDOW_CALLBACK = Runnable {}
     }
 }
