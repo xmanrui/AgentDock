@@ -10,7 +10,6 @@ class AgentDockHtmlRendererTest {
         val html = AgentDockHtmlRenderer.render(
             initialState = AgentDockHtmlRenderer.ViewState(
                 count = 1,
-                health = "Codex ready · Claude Code ready",
                 providers = listOf(
                     AgentDockHtmlRenderer.ProviderItem("codex", "Codex"),
                     AgentDockHtmlRenderer.ProviderItem("claude-code", "Claude Code")
@@ -53,7 +52,8 @@ class AgentDockHtmlRendererTest {
         assertContains(html, "compositionend")
         assertContains(html, "event.isComposing")
         assertContains(html, "focusSearch: true")
-        assertContains(html, "footer-refresh")
+        assertContains(html, "provider-filter-set")
+        assertContains(html, "filter-refresh")
         assertContains(html, "data-action=\"refresh\"")
         assertContains(html, "is-refreshing")
         assertContains(html, "aria-busy")
@@ -63,7 +63,6 @@ class AgentDockHtmlRendererTest {
         assertContains(html, "payload.refreshPending")
         assertContains(html, "刷新会话")
         assertContains(html, "if (composingSearch)")
-        assertContains(html, "从当前文件")
         assertContains(html, "Open")
         assertContains(html, "Pin")
         assertContains(html, "Archive")
@@ -83,5 +82,12 @@ class AgentDockHtmlRendererTest {
         assertFalse(html.contains("<span>AgentDock</span>"))
         assertFalse(html.contains("data-action=\"new\""))
         assertFalse(html.contains("Provider settings"))
+        assertFalse(html.contains("从当前文件"))
+        assertFalse(html.contains("data-action=\"current-file\""))
+        assertFalse(html.contains("footer-strip"))
+        assertFalse(html.contains("footer-refresh"))
+        assertFalse(html.contains("Codex ready"))
+        assertFalse(html.contains("Claude Code ready"))
+        assertFalse(html.contains("minmax(0, 1fr) 44px"))
     }
 }

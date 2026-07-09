@@ -8,8 +8,7 @@ object AgentDockHtmlRenderer {
     data class ViewState(
         val sessions: List<SessionItem>,
         val providers: List<ProviderItem> = emptyList(),
-        val count: Int,
-        val health: String
+        val count: Int
     )
 
     data class ProviderItem(
@@ -83,7 +82,7 @@ object AgentDockHtmlRenderer {
                   width: 100%;
                   height: 100vh;
                   display: grid;
-                  grid-template-rows: 48px 42px minmax(0, 1fr) 44px;
+                  grid-template-rows: 48px 42px minmax(0, 1fr);
                   background: rgba(27, 31, 27, .98);
                   border-left: 1px solid var(--line-soft);
                 }
@@ -109,7 +108,7 @@ object AgentDockHtmlRenderer {
 
                 .search-row {
                   display: grid;
-                  grid-template-columns: minmax(0, 1fr) auto;
+                  grid-template-columns: minmax(0, 1fr);
                   gap: 8px;
                   align-items: center;
                   padding: 8px 10px;
@@ -148,16 +147,24 @@ object AgentDockHtmlRenderer {
                 }
 
                 .provider-filters {
+                  display: grid;
+                  grid-template-columns: minmax(0, 1fr) auto;
+                  align-items: center;
+                  gap: 8px;
+                  padding: 7px 10px;
+                  border-bottom: 1px solid var(--line-soft);
+                }
+
+                .provider-filter-set {
+                  min-width: 0;
                   display: flex;
                   align-items: center;
                   gap: 6px;
-                  padding: 7px 10px;
-                  border-bottom: 1px solid var(--line-soft);
                   overflow-x: auto;
                   overflow-y: hidden;
                 }
 
-                .provider-filters::-webkit-scrollbar { display: none; }
+                .provider-filter-set::-webkit-scrollbar { display: none; }
 
                 .provider-filter {
                   height: 28px;
@@ -400,26 +407,7 @@ object AgentDockHtmlRenderer {
                   line-height: 1.45;
                 }
 
-                .footer-strip {
-                  display: grid;
-                  grid-template-columns: minmax(0, 1fr) auto;
-                  align-items: center;
-                  gap: 10px;
-                  padding: 8px 10px;
-                  border-top: 1px solid var(--line-soft);
-                  background: rgba(33, 37, 32, .94);
-                }
-
-                .health {
-                  min-width: 0;
-                  color: var(--text-dim);
-                  font-size: 12px;
-                  white-space: nowrap;
-                  overflow: hidden;
-                  text-overflow: ellipsis;
-                }
-
-                .footer-refresh {
+                .filter-refresh {
                   width: 28px;
                   height: 28px;
                   display: inline-flex;
@@ -433,34 +421,34 @@ object AgentDockHtmlRenderer {
                   transition: background .15s ease, border-color .15s ease, color .15s ease, transform .12s ease;
                 }
 
-                .footer-refresh:hover {
+                .filter-refresh:hover {
                   color: var(--text);
                   background: rgba(255, 255, 255, .07);
                   border-color: var(--line);
                 }
 
-                .footer-refresh:active {
+                .filter-refresh:active {
                   transform: translateY(1px);
                 }
 
-                .footer-refresh:disabled {
+                .filter-refresh:disabled {
                   opacity: 1;
                 }
 
-                .footer-refresh.is-refreshing {
+                .filter-refresh.is-refreshing {
                   color: var(--green);
                   background: var(--green-soft);
                   border-color: rgba(104, 217, 130, .46);
                   cursor: wait;
                 }
 
-                .footer-refresh svg {
+                .filter-refresh svg {
                   width: 15px;
                   height: 15px;
                   display: block;
                 }
 
-                .footer-refresh.is-refreshing svg {
+                .filter-refresh.is-refreshing svg {
                   animation: agentdock-refresh-spin .72s linear infinite;
                 }
 
@@ -568,7 +556,6 @@ object AgentDockHtmlRenderer {
                   function renderSearch() {
                     return '<section class="search-row">' +
                       '<input id="agentdock-search" class="search" placeholder="Search sessions" value="' + attr(query) + '">' +
-                      '<button class="plain-button" data-action="current-file">从当前文件</button>' +
                     '</section>';
                   }
 
@@ -576,6 +563,8 @@ object AgentDockHtmlRenderer {
                     var allActive = selectedProvider === "all" ? " active" : "";
                     var countLabel = String(state.count || 0);
                     var countHint = "This project has " + countLabel + " " + (state.count === 1 ? "session." : "sessions.");
+                    var refreshClass = refreshing ? " is-refreshing" : "";
+                    var refreshState = refreshing ? ' disabled aria-busy="true" title="正在刷新会话"' : ' aria-busy="false" title="刷新会话"';
                     var providerButtons = providerOptions().map(function (provider) {
                       var active = selectedProvider === provider.id ? " active" : "";
                       return '<button class="provider-filter' + active + '" data-provider="' + attr(provider.id) + '" title="' + attr(provider.name) + '" aria-label="' + attr(provider.name) + '">' +
@@ -583,8 +572,13 @@ object AgentDockHtmlRenderer {
                       '</button>';
                     }).join("");
                     return '<nav class="provider-filters" aria-label="AI provider filters">' +
-                      '<button class="provider-filter all' + allActive + '" data-provider="all" data-hint="' + attr(countHint) + '" aria-describedby="agentdock-tooltip" aria-label="All AI providers, ' + attr(countHint) + '">All<span class="provider-count">' + escapeHtml(countLabel) + '</span></button>' +
-                      providerButtons +
+                      '<div class="provider-filter-set">' +
+                        '<button class="provider-filter all' + allActive + '" data-provider="all" data-hint="' + attr(countHint) + '" aria-describedby="agentdock-tooltip" aria-label="All AI providers, ' + attr(countHint) + '">All<span class="provider-count">' + escapeHtml(countLabel) + '</span></button>' +
+                        providerButtons +
+                      '</div>' +
+                      '<button class="filter-refresh' + refreshClass + '" data-action="refresh" aria-label="刷新会话"' + refreshState + '>' +
+                        '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M20 12a8 8 0 0 1-13.66 5.66M4 12A8 8 0 0 1 17.66 6.34M18 3v4h-4M6 21v-4h4" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>' +
+                      '</button>' +
                     '</nav>';
                   }
 
@@ -615,17 +609,6 @@ object AgentDockHtmlRenderer {
                       return '<section class="sessions-list"><div class="empty">No matching sessions</div></section>';
                     }
                     return '<section class="sessions-list">' + sessions.map(renderCard).join("") + '</section>';
-                  }
-
-                  function renderFooter() {
-                    var refreshClass = refreshing ? " is-refreshing" : "";
-                    var refreshState = refreshing ? ' disabled aria-busy="true" title="正在刷新会话"' : ' aria-busy="false" title="刷新会话"';
-                    return '<footer class="footer-strip">' +
-                      '<div class="health">' + escapeHtml(state.health) + '</div>' +
-                      '<button class="footer-refresh' + refreshClass + '" data-action="refresh" aria-label="刷新会话"' + refreshState + '>' +
-                        '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M20 12a8 8 0 0 1-13.66 5.66M4 12A8 8 0 0 1 17.66 6.34M18 3v4h-4M6 21v-4h4" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>' +
-                      '</button>' +
-                    '</footer>';
                   }
 
                   function beginReloadFeedback() {
@@ -711,7 +694,7 @@ object AgentDockHtmlRenderer {
                     var forceSearchFocus = Boolean(options && options.focusSearch);
                     var keepSearchFocus = forceSearchFocus || searchFocused;
                     hideSessionHint();
-                    root.innerHTML = renderSearch() + renderFilters() + renderList() + renderFooter();
+                    root.innerHTML = renderSearch() + renderFilters() + renderList();
                     if (keepSearchFocus) searchFocused = true;
                     bind(keepSearchFocus);
                   }

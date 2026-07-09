@@ -3,7 +3,6 @@ package com.agentdock.ui
 import com.agentdock.model.AgentSession
 import com.agentdock.model.AgentSessionStatus
 import com.agentdock.model.CLIProvider
-import com.agentdock.model.ProviderDetectionResult
 import com.agentdock.notification.AgentDockNotifications
 import com.agentdock.service.AgentSessionOperationResult
 import com.agentdock.service.AgentSessionProjectService
@@ -14,7 +13,6 @@ import com.google.gson.JsonObject
 import com.google.gson.JsonParser
 import com.intellij.openapi.Disposable
 import com.intellij.openapi.application.ApplicationManager
-import com.intellij.openapi.fileEditor.FileEditorManager
 import com.intellij.openapi.options.ShowSettingsUtil
 import com.intellij.openapi.project.Project
 import com.intellij.openapi.wm.ToolWindow
@@ -92,8 +90,6 @@ class AgentDockPanel(
     private fun handleAction(payload: String): String {
         return try {
             val json = parsePayload(payload)
-            var query: String? = null
-            var forceDiscovery = false
             when (json.string("action")) {
                 "open" -> json.string("id")?.let { openSession(it) }
                 "pin" -> json.string("id")?.let { service.togglePin(it) }
@@ -102,11 +98,10 @@ class AgentDockPanel(
                     requestBackgroundRefresh()
                     return AgentDockHtmlRenderer.refreshPendingResponseJson()
                 }
-                "current-file" -> query = currentFileName()
                 "settings" -> SwingUtilities.invokeLater { openSettings() }
                 "new" -> SwingUtilities.invokeLater { createSessionAndRefresh() }
             }
-            actionResponse(query = query, forceDiscovery = forceDiscovery)
+            actionResponse()
         } catch (error: Exception) {
             actionResponse(error = error.message ?: "AgentDock action failed")
         }
@@ -136,12 +131,6 @@ class AgentDockPanel(
 
     private fun openSettings() {
         ShowSettingsUtil.getInstance().showSettingsDialog(project, "AgentDock")
-    }
-
-    private fun currentFileName(): String? {
-        return runOnEdt {
-            FileEditorManager.getInstance(project).selectedFiles.firstOrNull()?.name
-        }
     }
 
     private fun pushState(forceDiscovery: Boolean = false) {
@@ -240,8 +229,7 @@ class AgentDockPanel(
                     name = provider.displayName
                 )
             },
-            count = count,
-            health = providerHealth(providerList)
+            count = count
         )
     }
 
@@ -263,17 +251,6 @@ class AgentDockPanel(
             pinned = pinned,
             archived = archived
         )
-    }
-
-    private fun providerHealth(providers: List<CLIProvider>): String {
-        return providers.joinToString(" · ") { provider ->
-            val state = when (providerRegistry.detect(provider.id)) {
-                is ProviderDetectionResult.Available -> "ready"
-                is ProviderDetectionResult.Disabled -> "disabled"
-                is ProviderDetectionResult.Missing -> "missing"
-            }
-            "${provider.displayName} $state"
-        }
     }
 
     private fun updateToolWindowPresentation(count: Int) {
