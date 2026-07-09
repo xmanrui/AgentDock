@@ -7,6 +7,7 @@ import com.agentdock.notification.AgentDockNotifications
 import com.agentdock.service.AgentSessionOperationResult
 import com.agentdock.service.AgentSessionProjectService
 import com.agentdock.service.CLIProviderRegistry
+import com.agentdock.service.LocalSessionContentService
 import com.agentdock.util.SessionTextSanitizer
 import com.agentdock.util.TimeFormatter
 import com.google.gson.JsonObject
@@ -32,6 +33,7 @@ import java.awt.Component
 import java.awt.Font
 import java.awt.event.HierarchyEvent
 import java.util.concurrent.atomic.AtomicBoolean
+import java.util.concurrent.atomic.AtomicLong
 import javax.swing.JComponent
 import javax.swing.JLabel
 import javax.swing.JPanel
@@ -58,11 +60,14 @@ class AgentDockPanel(
         isRepeats = true
     }
     private val refreshInFlight = AtomicBoolean(false)
+    private val sessionContentService = LocalSessionContentService()
+    private val previewRequestVersion = AtomicLong(0)
     private var panelShowing = false
     private var sessionCount: Int = 0
     private var lastObservedToolWindowVisible: Boolean? = null
 
     val component: JComponent = browser?.component ?: fallbackComponent()
+    private val sessionPreviewPopup = SessionPreviewPopup(component)
     private val persistentRightToolWindowLayout = PersistentRightToolWindowLayout(
         content = component,
         nativeToolWindowComponent = { if (toolWindow.isDisposed) null else toolWindow.component },
@@ -100,6 +105,9 @@ class AgentDockPanel(
         if (browser != null) {
             installVisibilityRefreshHooks()
         }
+        ApplicationManager.getApplication().executeOnPooledThread {
+            sessionContentService.warmSourceIndex()
+        }
     }
 
     fun attachContent() {
@@ -110,6 +118,8 @@ class AgentDockPanel(
     }
 
     override fun dispose() {
+        previewRequestVersion.incrementAndGet()
+        sessionPreviewPopup.dispose()
         persistentRightToolWindowLayout.dispose()
         removeTerminalStateListener()
         autoRefreshTimer.stop()
@@ -129,6 +139,17 @@ class AgentDockPanel(
                 }
                 "settings" -> SwingUtilities.invokeLater { openSettings() }
                 "new" -> SwingUtilities.invokeLater { createSessionAndRefresh() }
+                "preview-show" -> {
+                    val sessionId = json.string("id") ?: return AgentDockHtmlRenderer.interactionHandledResponseJson()
+                    val anchor = json.previewAnchor()
+                        ?: return AgentDockHtmlRenderer.interactionHandledResponseJson()
+                    requestSessionPreview(sessionId, anchor)
+                    return AgentDockHtmlRenderer.interactionHandledResponseJson()
+                }
+                "preview-hide" -> {
+                    hideSessionPreview(immediate = json.boolean("immediate") == true)
+                    return AgentDockHtmlRenderer.interactionHandledResponseJson()
+                }
             }
             actionResponse()
         } catch (error: Exception) {
@@ -137,6 +158,7 @@ class AgentDockPanel(
     }
 
     private fun openSession(sessionId: String) {
+        hideSessionPreview(immediate = true)
         runOnEdt {
             handleResult(service.resumeSession(sessionId))
             scheduleExclusiveRightToolWindowMode()
@@ -144,6 +166,7 @@ class AgentDockPanel(
     }
 
     private fun createSessionAndRefresh() {
+        hideSessionPreview(immediate = true)
         val providers = providerRegistry.listEnabledProviders()
         val dialog = NewSessionDialog(project, providers)
         if (!dialog.showAndGet()) return
@@ -161,7 +184,37 @@ class AgentDockPanel(
     }
 
     private fun openSettings() {
+        hideSessionPreview(immediate = true)
         ShowSettingsUtil.getInstance().showSettingsDialog(project, "AgentDock")
+    }
+
+    private fun requestSessionPreview(sessionId: String, anchor: SessionPreviewAnchor) {
+        val session = service.findSession(sessionId)?.copy() ?: return
+        val providerName = providerRegistry.getProvider(session.providerId)?.displayName ?: session.providerId
+        val requestVersion = previewRequestVersion.incrementAndGet()
+        ApplicationManager.getApplication().invokeLater {
+            sessionPreviewPopup.hideImmediately()
+        }
+        ApplicationManager.getApplication().executeOnPooledThread {
+            val preview = sessionContentService.load(session)
+            ApplicationManager.getApplication().invokeLater {
+                if (previewRequestVersion.get() != requestVersion || !component.isShowing) {
+                    return@invokeLater
+                }
+                sessionPreviewPopup.show(session, providerName, preview, anchor)
+            }
+        }
+    }
+
+    private fun hideSessionPreview(immediate: Boolean) {
+        previewRequestVersion.incrementAndGet()
+        ApplicationManager.getApplication().invokeLater {
+            if (immediate) {
+                sessionPreviewPopup.hideImmediately()
+            } else {
+                sessionPreviewPopup.requestHide()
+            }
+        }
     }
 
     private fun pushState(forceDiscovery: Boolean = false) {
@@ -225,6 +278,7 @@ class AgentDockPanel(
             }
         } else {
             autoRefreshTimer.stop()
+            hideSessionPreview(immediate = true)
         }
         panelShowing = showing
     }
@@ -399,6 +453,7 @@ class AgentDockPanel(
     }
 
     private fun hidePersistentToolWindow() {
+        hideSessionPreview(immediate = true)
         persistentRightToolWindowLayout.hide()
         if (!toolWindow.isDisposed && toolWindow.isVisible) {
             toolWindow.hide(TOOL_WINDOW_CALLBACK)
@@ -422,6 +477,25 @@ class AgentDockPanel(
     private fun JsonObject.string(name: String): String? {
         val value = get(name) ?: return null
         return if (value.isJsonPrimitive && value.asJsonPrimitive.isString) value.asString else null
+    }
+
+    private fun JsonObject.boolean(name: String): Boolean? {
+        val value = get(name) ?: return null
+        return if (value.isJsonPrimitive && value.asJsonPrimitive.isBoolean) value.asBoolean else null
+    }
+
+    private fun JsonObject.int(name: String): Int? {
+        val value = get(name) ?: return null
+        return if (value.isJsonPrimitive && value.asJsonPrimitive.isNumber) value.asInt else null
+    }
+
+    private fun JsonObject.previewAnchor(): SessionPreviewAnchor? {
+        return SessionPreviewAnchor(
+            left = int("left") ?: return null,
+            top = int("top") ?: return null,
+            width = int("width") ?: return null,
+            height = int("height") ?: return null
+        )
     }
 
     private fun AgentSessionStatus.statusKey(): String {

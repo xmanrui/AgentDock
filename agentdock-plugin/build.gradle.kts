@@ -7,7 +7,7 @@ plugins {
 }
 
 group = "com.agentdock"
-version = "0.1.49"
+version = "0.1.51"
 
 repositories {
     maven("https://maven.aliyun.com/repository/public")
@@ -56,7 +56,7 @@ intellijPlatform {
         """.trimIndent()
 
         changeNotes = """
-            Adds local Codex and Claude Code session discovery plus a prototype-aligned AgentDock tool window.
+            Adds a fast hover conversation preview beside each session card.
         """.trimIndent()
     }
 

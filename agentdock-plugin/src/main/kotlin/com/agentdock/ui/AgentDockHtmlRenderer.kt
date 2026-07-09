@@ -34,8 +34,11 @@ object AgentDockHtmlRenderer {
         val state: ViewState? = null,
         val query: String? = null,
         val error: String? = null,
-        val refreshPending: Boolean = false
+        val refreshPending: Boolean = false,
+        val preserveView: Boolean = false
     )
+
+    fun interactionHandledResponseJson(): String = gson.toJson(ActionResponse(preserveView = true))
 
     fun render(initialState: ViewState, bridgeScript: String): String {
         val stateJson = scriptJson(initialState)
@@ -486,6 +489,9 @@ object AgentDockHtmlRenderer {
                   var refreshing = false;
                   var refreshStartedAt = 0;
                   var refreshFinishTimer = null;
+                  var sessionPreviewTimer = null;
+                  var hoveredSessionId = null;
+                  var requestedPreviewId = null;
                   var root = document.getElementById("agentdock-root");
                   var tooltip = document.getElementById("agentdock-tooltip");
                   var toast = document.getElementById("agentdock-toast");
@@ -576,7 +582,7 @@ object AgentDockHtmlRenderer {
                   }
 
                   function renderCard(item) {
-                    return '<article class="session-card">' +
+                    return '<article class="session-card" data-session-id="' + attr(item.id) + '">' +
                       '<div class="session-top">' +
                         providerLogo(item.providerId) +
                         '<div class="session-copy">' +
@@ -674,18 +680,34 @@ object AgentDockHtmlRenderer {
                     }
                     root.querySelectorAll("[data-action]").forEach(function (button) {
                       button.addEventListener("click", function () {
+                        hideSessionPreview(true);
                         var action = button.getAttribute("data-action");
                         var id = button.getAttribute("data-id");
                         if (action === "refresh") beginReloadFeedback();
                         send(action, {id: id});
                       });
                     });
+                    root.querySelectorAll(".session-card[data-session-id]").forEach(function (card) {
+                      card.addEventListener("mouseenter", function () {
+                        scheduleSessionPreview(card);
+                      });
+                      card.addEventListener("mouseleave", function () {
+                        hideSessionPreview(false);
+                      });
+                    });
+                    var sessionsList = root.querySelector(".sessions-list");
+                    if (sessionsList) {
+                      sessionsList.addEventListener("scroll", function () {
+                        hideSessionPreview(true);
+                      }, {passive: true});
+                    }
                   }
 
                   function render(options) {
                     var forceSearchFocus = Boolean(options && options.focusSearch);
                     var keepSearchFocus = forceSearchFocus || searchFocused;
                     hideSessionHint();
+                    hideSessionPreview(true);
                     root.innerHTML = renderSearch() + renderFilters() + renderList();
                     if (keepSearchFocus) searchFocused = true;
                     bind(keepSearchFocus);
@@ -709,6 +731,39 @@ object AgentDockHtmlRenderer {
                     tooltip.classList.remove("show");
                   }
 
+                  function scheduleSessionPreview(card) {
+                    if (sessionPreviewTimer) {
+                      window.clearTimeout(sessionPreviewTimer);
+                    }
+                    var sessionId = card.getAttribute("data-session-id") || "";
+                    if (!sessionId) return;
+                    hoveredSessionId = sessionId;
+                    sessionPreviewTimer = window.setTimeout(function () {
+                      sessionPreviewTimer = null;
+                      if (hoveredSessionId !== sessionId || !card.isConnected) return;
+                      var rect = card.getBoundingClientRect();
+                      requestedPreviewId = sessionId;
+                      send("preview-show", {
+                        id: sessionId,
+                        left: Math.round(rect.left),
+                        top: Math.round(rect.top),
+                        width: Math.round(rect.width),
+                        height: Math.round(rect.height)
+                      });
+                    }, 120);
+                  }
+
+                  function hideSessionPreview(immediate) {
+                    if (sessionPreviewTimer) {
+                      window.clearTimeout(sessionPreviewTimer);
+                      sessionPreviewTimer = null;
+                    }
+                    hoveredSessionId = null;
+                    if (!requestedPreviewId) return;
+                    requestedPreviewId = null;
+                    send("preview-hide", {immediate: Boolean(immediate)});
+                  }
+
                   function send(action, payload) {
                     var data = payload || {};
                     data.action = action;
@@ -722,6 +777,9 @@ object AgentDockHtmlRenderer {
                       if (payload.state) state = payload.state;
                       if (payload.query != null) query = payload.query;
                       if (payload.error) showError(payload.error);
+                      if (payload.preserveView) {
+                        return;
+                      }
                       if (payload.refreshPending) {
                         return;
                       }
