@@ -139,15 +139,22 @@ class AgentDockPanel(
         if (forceDiscovery) {
             service.syncDiscoveredSessions(force = true)
         }
-        val providers = providerRegistry.listProviders().associateBy { it.id }
+        val providerList = providerRegistry.listProviders()
+        val providers = providerList.associateBy { it.id }
         val sessions = service.listSessions(includeArchived = true)
             .map { session -> session.toViewItem(providers[session.providerId]) }
         val count = service.listSessions(includeArchived = false).size
         updateToolWindowPresentation(count)
         return AgentDockHtmlRenderer.ViewState(
             sessions = sessions,
+            providers = providerList.map { provider ->
+                AgentDockHtmlRenderer.ProviderItem(
+                    id = provider.id,
+                    name = provider.displayName
+                )
+            },
             count = count,
-            health = providerHealth(providerRegistry.listProviders())
+            health = providerHealth(providerList)
         )
     }
 

@@ -11,6 +11,10 @@ class AgentDockHtmlRendererTest {
             initialState = AgentDockHtmlRenderer.ViewState(
                 count = 1,
                 health = "Codex ready · Claude Code ready",
+                providers = listOf(
+                    AgentDockHtmlRenderer.ProviderItem("codex", "Codex"),
+                    AgentDockHtmlRenderer.ProviderItem("claude-code", "Claude Code")
+                ),
                 sessions = listOf(
                     AgentDockHtmlRenderer.SessionItem(
                         id = "codex:abc",
@@ -30,11 +34,17 @@ class AgentDockHtmlRendererTest {
         )
 
         assertContains(html, "session-card")
+        assertContains(html, "provider-filters")
+        assertContains(html, "data-provider=\"all\"")
+        assertContains(html, "\"id\":\"codex\"")
+        assertContains(html, "\"id\":\"claude-code\"")
+        assertContains(html, "全部 AI 厂商")
         assertContains(html, "Search sessions")
         assertContains(html, "从当前文件")
         assertContains(html, "Open")
         assertContains(html, "Pin")
         assertContains(html, "Archive")
+        assertFalse(html.contains("data-status"))
         assertFalse(html.contains("cwd", ignoreCase = true))
         assertFalse(html.contains("shell", ignoreCase = true))
         assertFalse(html.contains("Context", ignoreCase = true))

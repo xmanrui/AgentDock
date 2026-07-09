@@ -7,8 +7,14 @@ object AgentDockHtmlRenderer {
 
     data class ViewState(
         val sessions: List<SessionItem>,
+        val providers: List<ProviderItem> = emptyList(),
         val count: Int,
         val health: String
+    )
+
+    data class ProviderItem(
+        val id: String,
+        val name: String
     )
 
     data class SessionItem(
@@ -82,7 +88,7 @@ object AgentDockHtmlRenderer {
                 }
 
                 .plain-button,
-                .chip,
+                .provider-filter,
                 .session-action {
                   border: 1px solid transparent;
                   border-radius: 6px;
@@ -93,7 +99,7 @@ object AgentDockHtmlRenderer {
                 }
 
                 .plain-button:hover,
-                .chip:hover,
+                .provider-filter:hover,
                 .session-action:hover {
                   color: var(--text);
                   background: rgba(255, 255, 255, .07);
@@ -140,7 +146,7 @@ object AgentDockHtmlRenderer {
                   white-space: nowrap;
                 }
 
-                .filters {
+                .provider-filters {
                   display: flex;
                   align-items: center;
                   gap: 6px;
@@ -150,23 +156,38 @@ object AgentDockHtmlRenderer {
                   overflow-y: hidden;
                 }
 
-                .filters::-webkit-scrollbar { display: none; }
+                .provider-filters::-webkit-scrollbar { display: none; }
 
-                .chip {
+                .provider-filter {
                   height: 28px;
-                  padding: 0 9px;
-                  white-space: nowrap;
-                  font-size: 12px;
-                  font-weight: 760;
+                  min-width: 36px;
+                  padding: 0 8px;
+                  display: inline-flex;
+                  align-items: center;
+                  justify-content: center;
                   background: rgba(255, 255, 255, .035);
                   border-color: var(--line-soft);
                   flex-shrink: 0;
                 }
 
-                .chip.active {
+                .provider-filter.all {
+                  min-width: 44px;
+                  font-size: 12px;
+                  font-weight: 760;
+                  white-space: nowrap;
+                }
+
+                .provider-filter.active {
                   color: #dfeaff;
                   background: var(--blue-soft);
                   border-color: rgba(115, 167, 255, .42);
+                }
+
+                .provider-filter .logo {
+                  width: 19px;
+                  height: 19px;
+                  margin: 0;
+                  display: block;
                 }
 
                 .sessions-list {
@@ -370,16 +391,9 @@ object AgentDockHtmlRenderer {
                 window.AgentDock = (function () {
                   var state = $stateJson;
                   var query = "";
-                  var selectedStatus = "all";
+                  var selectedProvider = "all";
                   var root = document.getElementById("agentdock-root");
                   var toast = document.getElementById("agentdock-toast");
-                  var filterLabels = [
-                    ["all", "All"],
-                    ["active", "Active"],
-                    ["restorable", "Restorable"],
-                    ["missing", "Missing CLI"],
-                    ["archived", "Archived"]
-                  ];
 
                   function escapeHtml(value) {
                     return String(value == null ? "" : value).replace(/[&<>"']/g, function (ch) {
@@ -406,19 +420,33 @@ object AgentDockHtmlRenderer {
                     return item.statusKey;
                   }
 
-                  function matchesStatus(item) {
-                    if (selectedStatus === "archived") return item.statusKey === "archived";
-                    if (item.statusKey === "archived") return false;
-                    if (selectedStatus === "all") return true;
-                    if (selectedStatus === "missing") return item.statusKey === "missing-cli";
-                    return item.statusKey === selectedStatus;
+                  function providerOptions() {
+                    var seen = {};
+                    var options = [];
+                    function addProvider(id, name) {
+                      if (!id || seen[id]) return;
+                      seen[id] = true;
+                      options.push({id: id, name: name || id});
+                    }
+                    (state.providers || []).forEach(function (provider) {
+                      addProvider(provider.id, provider.name);
+                    });
+                    (state.sessions || []).forEach(function (session) {
+                      addProvider(session.providerId, session.providerName);
+                    });
+                    return options;
+                  }
+
+                  function matchesProvider(item) {
+                    if (selectedProvider === "all") return true;
+                    return item.providerId === selectedProvider;
                   }
 
                   function filteredSessions() {
                     var q = query.trim().toLowerCase();
                     return state.sessions.filter(function (item) {
                       var text = [item.title, item.summary, item.providerName, item.statusLabel].join(" ").toLowerCase();
-                      return matchesStatus(item) && (!q || text.indexOf(q) >= 0);
+                      return matchesProvider(item) && (!q || text.indexOf(q) >= 0);
                     });
                   }
 
@@ -430,12 +458,17 @@ object AgentDockHtmlRenderer {
                   }
 
                   function renderFilters() {
-                    return '<nav class="filters">' + filterLabels.map(function (item) {
-                      var key = item[0];
-                      var label = item[1];
-                      var active = selectedStatus === key ? " active" : "";
-                      return '<button class="chip' + active + '" data-status="' + attr(key) + '">' + escapeHtml(label) + '</button>';
-                    }).join("") + '</nav>';
+                    var allActive = selectedProvider === "all" ? " active" : "";
+                    var providerButtons = providerOptions().map(function (provider) {
+                      var active = selectedProvider === provider.id ? " active" : "";
+                      return '<button class="provider-filter' + active + '" data-provider="' + attr(provider.id) + '" title="' + attr(provider.name) + '" aria-label="' + attr(provider.name) + '">' +
+                        providerLogo(provider.id) +
+                      '</button>';
+                    }).join("");
+                    return '<nav class="provider-filters" aria-label="AI provider filters">' +
+                      '<button class="provider-filter all' + allActive + '" data-provider="all" title="全部 AI 厂商" aria-label="全部 AI 厂商">All</button>' +
+                      providerButtons +
+                    '</nav>';
                   }
 
                   function renderCard(item) {
@@ -479,9 +512,9 @@ object AgentDockHtmlRenderer {
                         render();
                       });
                     }
-                    root.querySelectorAll("[data-status]").forEach(function (button) {
+                    root.querySelectorAll("[data-provider]").forEach(function (button) {
                       button.addEventListener("click", function () {
-                        selectedStatus = button.getAttribute("data-status") || "all";
+                        selectedProvider = button.getAttribute("data-provider") || "all";
                         render();
                       });
                     });
