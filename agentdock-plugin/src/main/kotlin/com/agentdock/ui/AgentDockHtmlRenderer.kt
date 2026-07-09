@@ -203,7 +203,7 @@ object AgentDockHtmlRenderer {
                   border: 1px solid var(--line-soft);
                   border-radius: var(--radius);
                   background: rgba(255, 255, 255, .032);
-                  padding: 10px;
+                  padding: 9px 10px;
                   cursor: default;
                   transition: background .15s ease, border-color .15s ease, transform .15s ease;
                 }
@@ -218,7 +218,7 @@ object AgentDockHtmlRenderer {
                   display: grid;
                   grid-template-columns: 24px minmax(0, 1fr) auto;
                   gap: 9px;
-                  align-items: start;
+                  align-items: center;
                 }
 
                 .logo {
@@ -234,15 +234,6 @@ object AgentDockHtmlRenderer {
                   color: var(--text);
                   font-weight: 770;
                   line-height: 1.25;
-                  white-space: nowrap;
-                  overflow: hidden;
-                  text-overflow: ellipsis;
-                }
-
-                .session-meta {
-                  margin-top: 4px;
-                  color: var(--text-dim);
-                  font-size: 12px;
                   white-space: nowrap;
                   overflow: hidden;
                   text-overflow: ellipsis;
@@ -300,21 +291,38 @@ object AgentDockHtmlRenderer {
                 }
 
                 .session-summary {
-                  margin-top: 8px;
+                  margin-top: 7px;
                   color: var(--text-soft);
                   font-size: 13px;
-                  line-height: 1.45;
+                  line-height: 1.4;
                   display: -webkit-box;
                   -webkit-line-clamp: 2;
                   -webkit-box-orient: vertical;
                   overflow: hidden;
                 }
 
+                .session-footer {
+                  display: grid;
+                  grid-template-columns: minmax(0, 1fr) auto;
+                  align-items: center;
+                  gap: 8px;
+                  margin-top: 8px;
+                }
+
+                .session-time {
+                  min-width: 0;
+                  color: var(--text-dim);
+                  font-size: 11px;
+                  line-height: 1.2;
+                  white-space: nowrap;
+                  overflow: hidden;
+                  text-overflow: ellipsis;
+                }
+
                 .session-actions {
                   display: flex;
                   align-items: center;
                   justify-content: flex-end;
-                  margin-top: 10px;
                   gap: 6px;
                 }
 
@@ -477,15 +485,17 @@ object AgentDockHtmlRenderer {
                         providerLogo(item.providerId) +
                         '<div class="session-copy">' +
                           '<div class="session-name" title="' + attr(item.title) + '">' + escapeHtml(item.title) + '</div>' +
-                          '<div class="session-meta">' + escapeHtml(item.providerName) + ' · ' + escapeHtml(item.updatedLabel) + '</div>' +
                         '</div>' +
                         '<span class="status ' + attr(statusClass(item)) + '">' + escapeHtml(item.statusLabel) + '</span>' +
                       '</div>' +
                       '<div class="session-summary">' + escapeHtml(item.summary || item.title || "No summary captured yet") + '</div>' +
-                      '<div class="session-actions">' +
-                        '<button class="session-action" data-action="open" data-id="' + attr(item.id) + '">Open</button>' +
-                        '<button class="session-action" data-action="pin" data-id="' + attr(item.id) + '">' + (item.pinned ? "Unpin" : "Pin") + '</button>' +
-                        '<button class="session-action" data-action="archive" data-id="' + attr(item.id) + '">' + (item.archived ? "Unarchive" : "Archive") + '</button>' +
+                      '<div class="session-footer">' +
+                        '<div class="session-time" title="' + attr(item.updatedLabel) + '">' + escapeHtml(item.updatedLabel) + '</div>' +
+                        '<div class="session-actions">' +
+                          '<button class="session-action" data-action="open" data-id="' + attr(item.id) + '">Open</button>' +
+                          '<button class="session-action" data-action="pin" data-id="' + attr(item.id) + '">' + (item.pinned ? "Unpin" : "Pin") + '</button>' +
+                          '<button class="session-action" data-action="archive" data-id="' + attr(item.id) + '">' + (item.archived ? "Unarchive" : "Archive") + '</button>' +
+                        '</div>' +
                       '</div>' +
                     '</article>';
                   }
