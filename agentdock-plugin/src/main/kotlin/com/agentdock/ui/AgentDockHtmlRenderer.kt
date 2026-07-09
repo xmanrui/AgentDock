@@ -400,6 +400,8 @@ object AgentDockHtmlRenderer {
                   var state = $stateJson;
                   var query = "";
                   var selectedProvider = "all";
+                  var searchFocused = true;
+                  var composingSearch = false;
                   var root = document.getElementById("agentdock-root");
                   var toast = document.getElementById("agentdock-toast");
 
@@ -512,20 +514,40 @@ object AgentDockHtmlRenderer {
                     return '<footer class="footer-strip"><div class="health">' + escapeHtml(state.health) + '</div></footer>';
                   }
 
-                  function bind() {
+                  function bind(forceSearchFocus) {
                     var input = document.getElementById("agentdock-search");
                     if (input) {
-                      input.focus();
-                      input.setSelectionRange(input.value.length, input.value.length);
-                      input.addEventListener("input", function () {
+                      if (forceSearchFocus || searchFocused) {
+                        input.focus();
+                        input.setSelectionRange(input.value.length, input.value.length);
+                      }
+                      input.addEventListener("focus", function () {
+                        searchFocused = true;
+                      });
+                      input.addEventListener("blur", function () {
+                        searchFocused = false;
+                      });
+                      input.addEventListener("compositionstart", function () {
+                        composingSearch = true;
+                      });
+                      input.addEventListener("compositionend", function () {
+                        composingSearch = false;
                         query = input.value;
-                        render();
+                        searchFocused = true;
+                        render({focusSearch: true});
+                      });
+                      input.addEventListener("input", function (event) {
+                        query = input.value;
+                        if (composingSearch || event.isComposing) return;
+                        searchFocused = true;
+                        render({focusSearch: true});
                       });
                     }
                     root.querySelectorAll("[data-provider]").forEach(function (button) {
                       button.addEventListener("click", function () {
+                        searchFocused = false;
                         selectedProvider = button.getAttribute("data-provider") || "all";
-                        render();
+                        render({focusSearch: false});
                       });
                     });
                     root.querySelectorAll("[data-action]").forEach(function (button) {
@@ -535,9 +557,12 @@ object AgentDockHtmlRenderer {
                     });
                   }
 
-                  function render() {
+                  function render(options) {
+                    var forceSearchFocus = Boolean(options && options.focusSearch);
+                    var keepSearchFocus = forceSearchFocus || searchFocused;
                     root.innerHTML = renderSearch() + renderFilters() + renderList() + renderFooter();
-                    bind();
+                    if (keepSearchFocus) searchFocused = true;
+                    bind(keepSearchFocus);
                   }
 
                   function send(action, payload) {
