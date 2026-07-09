@@ -575,7 +575,7 @@ object AgentDockHtmlRenderer {
                   function renderFilters() {
                     var allActive = selectedProvider === "all" ? " active" : "";
                     var countLabel = String(state.count || 0);
-                    var countHint = "本项目 session 数量为 " + countLabel;
+                    var countHint = "This project has " + countLabel + " " + (state.count === 1 ? "session." : "sessions.");
                     var providerButtons = providerOptions().map(function (provider) {
                       var active = selectedProvider === provider.id ? " active" : "";
                       return '<button class="provider-filter' + active + '" data-provider="' + attr(provider.id) + '" title="' + attr(provider.name) + '" aria-label="' + attr(provider.name) + '">' +
@@ -583,7 +583,7 @@ object AgentDockHtmlRenderer {
                       '</button>';
                     }).join("");
                     return '<nav class="provider-filters" aria-label="AI provider filters">' +
-                      '<button class="provider-filter all' + allActive + '" data-provider="all" data-hint="' + attr(countHint) + '" aria-describedby="agentdock-tooltip" aria-label="全部 AI 厂商，' + attr(countHint) + '">All<span class="provider-count">' + escapeHtml(countLabel) + '</span></button>' +
+                      '<button class="provider-filter all' + allActive + '" data-provider="all" data-hint="' + attr(countHint) + '" aria-describedby="agentdock-tooltip" aria-label="All AI providers, ' + attr(countHint) + '">All<span class="provider-count">' + escapeHtml(countLabel) + '</span></button>' +
                       providerButtons +
                     '</nav>';
                   }
