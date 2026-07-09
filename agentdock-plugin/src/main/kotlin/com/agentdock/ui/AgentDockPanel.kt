@@ -17,23 +17,30 @@ import com.intellij.openapi.application.ApplicationManager
 import com.intellij.openapi.fileEditor.FileEditorManager
 import com.intellij.openapi.options.ShowSettingsUtil
 import com.intellij.openapi.project.Project
+import com.intellij.openapi.wm.ToolWindow
 import com.intellij.ui.jcef.JBCefApp
 import com.intellij.ui.jcef.JBCefBrowser
 import com.intellij.ui.jcef.JBCefBrowserBase
 import com.intellij.ui.jcef.JBCefJSQuery
 import java.awt.BorderLayout
 import java.awt.Color
+import java.awt.Component
 import java.awt.Font
 import javax.swing.JComponent
 import javax.swing.JLabel
 import javax.swing.JPanel
 import javax.swing.SwingUtilities
+import javax.swing.Timer
 
-class AgentDockPanel(private val project: Project) : Disposable {
+class AgentDockPanel(
+    private val project: Project,
+    private val toolWindow: ToolWindow
+) : Disposable {
     private val service = AgentSessionProjectService.getInstance(project)
     private val providerRegistry = CLIProviderRegistry()
     private val browser: JBCefBrowser? = if (JBCefApp.isSupported()) JBCefBrowser() else null
     private val actionQuery: JBCefJSQuery? = browser?.let { JBCefJSQuery.create(it as JBCefBrowserBase) }
+    private var sessionCount: Int = 0
 
     val component: JComponent = browser?.component ?: fallbackComponent()
 
@@ -51,6 +58,10 @@ class AgentDockPanel(private val project: Project) : Disposable {
                 ).orEmpty()
             )
         )
+    }
+
+    fun attachContent() {
+        updateToolWindowPresentation(sessionCount)
     }
 
     override fun dispose() {
@@ -132,6 +143,7 @@ class AgentDockPanel(private val project: Project) : Disposable {
         val sessions = service.listSessions(includeArchived = true)
             .map { session -> session.toViewItem(providers[session.providerId]) }
         val count = service.listSessions(includeArchived = false).size
+        updateToolWindowPresentation(count)
         return AgentDockHtmlRenderer.ViewState(
             sessions = sessions,
             count = count,
@@ -168,6 +180,57 @@ class AgentDockPanel(private val project: Project) : Disposable {
             }
             "${provider.displayName} $state"
         }
+    }
+
+    private fun updateToolWindowPresentation(count: Int) {
+        sessionCount = count
+        val title = "AgentDock ($count)"
+        val description = "本项目session数量为$count"
+        runOnEdt {
+            toolWindow.setStripeTitle(title)
+            toolWindow.component.toolTipText = description
+            toolWindow.component.accessibleContext?.accessibleDescription = description
+            installTitleTooltip(title, description)
+        }
+        reapplyTitleTooltip(title, description)
+    }
+
+    private fun reapplyTitleTooltip(title: String, description: String) {
+        ApplicationManager.getApplication().invokeLater {
+            installTitleTooltip(title, description)
+        }
+        listOf(250, 1_000, 2_500, 5_000).forEach { delay ->
+            Timer(delay) {
+                installTitleTooltip(title, description)
+            }.apply {
+                isRepeats = false
+                start()
+            }
+        }
+    }
+
+    private fun installTitleTooltip(title: String, description: String) {
+        val root = toolWindow.component.topLevelAncestor ?: toolWindow.component
+        applyTooltipToTitleLabels(root, title, description)
+    }
+
+    private fun applyTooltipToTitleLabels(component: Component, title: String, description: String) {
+        val accessibleName = component.accessibleContext?.accessibleName
+        if (component is JLabel && isToolWindowTitleLabel(component, title, accessibleName)) {
+            component.text = title
+            component.accessibleContext?.accessibleName = title
+            component.accessibleContext?.accessibleDescription = description
+            component.toolTipText = description
+        }
+        if (component is java.awt.Container) {
+            component.components.forEach { child ->
+                applyTooltipToTitleLabels(child, title, description)
+            }
+        }
+    }
+
+    private fun isToolWindowTitleLabel(label: JLabel, title: String, accessibleName: String?): Boolean {
+        return label.text == title || accessibleName == title
     }
 
     private fun handleResult(result: AgentSessionOperationResult) {

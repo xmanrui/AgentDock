@@ -76,55 +76,11 @@ object AgentDockHtmlRenderer {
                   width: 100%;
                   height: 100vh;
                   display: grid;
-                  grid-template-rows: 44px 48px 42px minmax(0, 1fr) 44px;
+                  grid-template-rows: 48px 42px minmax(0, 1fr) 44px;
                   background: rgba(27, 31, 27, .98);
                   border-left: 1px solid var(--line-soft);
                 }
 
-                .sessions-head {
-                  display: flex;
-                  align-items: center;
-                  justify-content: space-between;
-                  gap: 8px;
-                  padding: 0 10px 0 13px;
-                  border-bottom: 1px solid var(--line-soft);
-                  background: rgba(33, 37, 32, .97);
-                }
-
-                .sessions-title {
-                  min-width: 0;
-                  display: flex;
-                  align-items: center;
-                  gap: 9px;
-                  font-weight: 800;
-                }
-
-                .sessions-title span {
-                  white-space: nowrap;
-                  overflow: hidden;
-                  text-overflow: ellipsis;
-                }
-
-                .session-count {
-                  min-width: 24px;
-                  height: 22px;
-                  display: inline-grid;
-                  place-items: center;
-                  border-radius: 999px;
-                  background: var(--green-soft);
-                  color: var(--green);
-                  font-size: 12px;
-                  font-weight: 820;
-                }
-
-                .head-actions {
-                  display: flex;
-                  align-items: center;
-                  gap: 4px;
-                  flex-shrink: 0;
-                }
-
-                .icon-button,
                 .plain-button,
                 .chip,
                 .session-action {
@@ -136,16 +92,6 @@ object AgentDockHtmlRenderer {
                   transition: background .15s ease, border-color .15s ease, color .15s ease, transform .15s ease;
                 }
 
-                .icon-button {
-                  width: 30px;
-                  height: 30px;
-                  display: inline-grid;
-                  place-items: center;
-                  padding: 0;
-                  font-weight: 760;
-                }
-
-                .icon-button:hover,
                 .plain-button:hover,
                 .chip:hover,
                 .session-action:hover {
@@ -476,16 +422,6 @@ object AgentDockHtmlRenderer {
                     });
                   }
 
-                  function renderHeader() {
-                    return '<header class="sessions-head">' +
-                      '<div class="sessions-title"><span>AgentDock</span><span class="session-count">' + escapeHtml(state.count) + '</span></div>' +
-                      '<div class="head-actions">' +
-                        '<button class="icon-button" title="New session" data-action="new">+</button>' +
-                        '<button class="icon-button" title="Provider settings" data-action="settings">⚙</button>' +
-                      '</div>' +
-                    '</header>';
-                  }
-
                   function renderSearch() {
                     return '<section class="search-row">' +
                       '<input id="agentdock-search" class="search" placeholder="Search sessions" value="' + attr(query) + '">' +
@@ -557,7 +493,7 @@ object AgentDockHtmlRenderer {
                   }
 
                   function render() {
-                    root.innerHTML = renderHeader() + renderSearch() + renderFilters() + renderList() + renderFooter();
+                    root.innerHTML = renderSearch() + renderFilters() + renderList() + renderFooter();
                     bind();
                   }
 

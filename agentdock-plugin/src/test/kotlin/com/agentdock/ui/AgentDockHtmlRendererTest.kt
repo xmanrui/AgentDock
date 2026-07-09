@@ -29,7 +29,6 @@ class AgentDockHtmlRendererTest {
             bridgeScript = "window.__agentdockMessage = message;"
         )
 
-        assertContains(html, "sessions-head")
         assertContains(html, "session-card")
         assertContains(html, "Search sessions")
         assertContains(html, "从当前文件")
@@ -43,5 +42,10 @@ class AgentDockHtmlRendererTest {
         assertFalse(html.contains("Refresh"))
         assertFalse(html.contains("Providers"))
         assertFalse(html.contains("Import Local Sessions"))
+        assertFalse(html.contains("sessions-head"))
+        assertFalse(html.contains("<span>Sessions</span>"))
+        assertFalse(html.contains("<span>AgentDock</span>"))
+        assertFalse(html.contains("data-action=\"new\""))
+        assertFalse(html.contains("Provider settings"))
     }
 }
