@@ -278,24 +278,23 @@ class AgentDockPanel(
 
     private fun updateToolWindowPresentation(count: Int) {
         sessionCount = count
-        val title = "AgentDock ($count)"
-        val description = "本项目session数量为$count"
+        val title = "AgentDock"
         runOnEdt {
             toolWindow.setStripeTitle(title)
-            toolWindow.component.toolTipText = description
-            toolWindow.component.accessibleContext?.accessibleDescription = description
-            installTitleTooltip(title, description)
+            toolWindow.component.toolTipText = null
+            toolWindow.component.accessibleContext?.accessibleDescription = title
+            installTitleLabel(title)
         }
-        reapplyTitleTooltip(title, description)
+        reapplyTitleLabel(title)
     }
 
-    private fun reapplyTitleTooltip(title: String, description: String) {
+    private fun reapplyTitleLabel(title: String) {
         ApplicationManager.getApplication().invokeLater {
-            installTitleTooltip(title, description)
+            installTitleLabel(title)
         }
         listOf(250, 1_000, 2_500, 5_000).forEach { delay ->
             Timer(delay) {
-                installTitleTooltip(title, description)
+                installTitleLabel(title)
             }.apply {
                 isRepeats = false
                 start()
@@ -303,22 +302,22 @@ class AgentDockPanel(
         }
     }
 
-    private fun installTitleTooltip(title: String, description: String) {
+    private fun installTitleLabel(title: String) {
         val root = toolWindow.component.topLevelAncestor ?: toolWindow.component
-        applyTooltipToTitleLabels(root, title, description)
+        applyTitleToTitleLabels(root, title)
     }
 
-    private fun applyTooltipToTitleLabels(component: Component, title: String, description: String) {
+    private fun applyTitleToTitleLabels(component: Component, title: String) {
         val accessibleName = component.accessibleContext?.accessibleName
         if (component is JLabel && isToolWindowTitleLabel(component, title, accessibleName)) {
             component.text = title
             component.accessibleContext?.accessibleName = title
-            component.accessibleContext?.accessibleDescription = description
-            component.toolTipText = description
+            component.accessibleContext?.accessibleDescription = title
+            component.toolTipText = null
         }
         if (component is java.awt.Container) {
             component.components.forEach { child ->
-                applyTooltipToTitleLabels(child, title, description)
+                applyTitleToTitleLabels(child, title)
             }
         }
     }

@@ -7,7 +7,7 @@ plugins {
 }
 
 group = "com.agentdock"
-version = "0.1.23"
+version = "0.1.26"
 
 repositories {
     maven("https://maven.aliyun.com/repository/public")

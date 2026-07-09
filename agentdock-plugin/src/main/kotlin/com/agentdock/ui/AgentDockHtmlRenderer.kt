@@ -172,7 +172,9 @@ object AgentDockHtmlRenderer {
                 }
 
                 .provider-filter.all {
-                  min-width: 44px;
+                  min-width: 58px;
+                  gap: 6px;
+                  padding: 0 7px 0 9px;
                   font-size: 12px;
                   font-weight: 760;
                   white-space: nowrap;
@@ -182,6 +184,54 @@ object AgentDockHtmlRenderer {
                   color: #dfeaff;
                   background: var(--blue-soft);
                   border-color: rgba(115, 167, 255, .42);
+                }
+
+                .provider-count {
+                  min-width: 18px;
+                  height: 18px;
+                  display: inline-flex;
+                  align-items: center;
+                  justify-content: center;
+                  padding: 0 5px;
+                  border: 1px solid rgba(255, 255, 255, .08);
+                  border-radius: 999px;
+                  color: var(--text-soft);
+                  background: rgba(255, 255, 255, .07);
+                  font-size: 11px;
+                  font-weight: 820;
+                  line-height: 1;
+                }
+
+                .provider-filter.all.active .provider-count {
+                  color: #dfeaff;
+                  background: rgba(115, 167, 255, .18);
+                  border-color: rgba(115, 167, 255, .25);
+                }
+
+                .agentdock-tooltip {
+                  position: fixed;
+                  z-index: 30;
+                  left: 0;
+                  top: 0;
+                  max-width: calc(100vw - 16px);
+                  padding: 7px 9px;
+                  border: 1px solid var(--line);
+                  border-radius: 7px;
+                  color: var(--text);
+                  background: rgba(23, 26, 23, .98);
+                  box-shadow: 0 14px 38px rgba(0, 0, 0, .38);
+                  font-size: 12px;
+                  line-height: 1.35;
+                  white-space: nowrap;
+                  pointer-events: none;
+                  opacity: 0;
+                  transform: translate(-50%, calc(-100% - 4px));
+                  transition: opacity .12s ease, transform .12s ease;
+                }
+
+                .agentdock-tooltip.show {
+                  opacity: 1;
+                  transform: translate(-50%, calc(-100% - 8px));
                 }
 
                 .provider-filter .logo {
@@ -444,6 +494,7 @@ object AgentDockHtmlRenderer {
             </head>
             <body>
               <main id="agentdock-root" class="agentdock"></main>
+              <div id="agentdock-tooltip" class="agentdock-tooltip" role="tooltip"></div>
               <div id="agentdock-toast" class="toast"></div>
               <script>
                 window.AgentDock = (function () {
@@ -456,6 +507,7 @@ object AgentDockHtmlRenderer {
                   var refreshStartedAt = 0;
                   var refreshFinishTimer = null;
                   var root = document.getElementById("agentdock-root");
+                  var tooltip = document.getElementById("agentdock-tooltip");
                   var toast = document.getElementById("agentdock-toast");
 
                   function escapeHtml(value) {
@@ -522,6 +574,8 @@ object AgentDockHtmlRenderer {
 
                   function renderFilters() {
                     var allActive = selectedProvider === "all" ? " active" : "";
+                    var countLabel = String(state.count || 0);
+                    var countHint = "本项目 session 数量为 " + countLabel;
                     var providerButtons = providerOptions().map(function (provider) {
                       var active = selectedProvider === provider.id ? " active" : "";
                       return '<button class="provider-filter' + active + '" data-provider="' + attr(provider.id) + '" title="' + attr(provider.name) + '" aria-label="' + attr(provider.name) + '">' +
@@ -529,7 +583,7 @@ object AgentDockHtmlRenderer {
                       '</button>';
                     }).join("");
                     return '<nav class="provider-filters" aria-label="AI provider filters">' +
-                      '<button class="provider-filter all' + allActive + '" data-provider="all" title="全部 AI 厂商" aria-label="全部 AI 厂商">All</button>' +
+                      '<button class="provider-filter all' + allActive + '" data-provider="all" data-hint="' + attr(countHint) + '" aria-describedby="agentdock-tooltip" aria-label="全部 AI 厂商，' + attr(countHint) + '">All<span class="provider-count">' + escapeHtml(countLabel) + '</span></button>' +
                       providerButtons +
                     '</nav>';
                   }
@@ -630,11 +684,19 @@ object AgentDockHtmlRenderer {
                     }
                     root.querySelectorAll("[data-provider]").forEach(function (button) {
                       button.addEventListener("click", function () {
+                        hideSessionHint();
                         searchFocused = false;
                         selectedProvider = button.getAttribute("data-provider") || "all";
                         render({focusSearch: false});
                       });
                     });
+                    var allButton = root.querySelector(".provider-filter.all");
+                    if (allButton) {
+                      allButton.addEventListener("mouseenter", function () { showSessionHint(allButton); });
+                      allButton.addEventListener("mouseleave", hideSessionHint);
+                      allButton.addEventListener("focus", function () { showSessionHint(allButton); });
+                      allButton.addEventListener("blur", hideSessionHint);
+                    }
                     root.querySelectorAll("[data-action]").forEach(function (button) {
                       button.addEventListener("click", function () {
                         var action = button.getAttribute("data-action");
@@ -648,9 +710,28 @@ object AgentDockHtmlRenderer {
                   function render(options) {
                     var forceSearchFocus = Boolean(options && options.focusSearch);
                     var keepSearchFocus = forceSearchFocus || searchFocused;
+                    hideSessionHint();
                     root.innerHTML = renderSearch() + renderFilters() + renderList() + renderFooter();
                     if (keepSearchFocus) searchFocused = true;
                     bind(keepSearchFocus);
+                  }
+
+                  function showSessionHint(button) {
+                    var message = button.getAttribute("data-hint") || "";
+                    if (!message) return;
+                    tooltip.textContent = message;
+                    tooltip.classList.add("show");
+                    var rect = button.getBoundingClientRect();
+                    var hintRect = tooltip.getBoundingClientRect();
+                    var left = rect.left + rect.width / 2;
+                    var minLeft = 8 + hintRect.width / 2;
+                    var maxLeft = window.innerWidth - 8 - hintRect.width / 2;
+                    tooltip.style.left = Math.max(minLeft, Math.min(maxLeft, left)) + "px";
+                    tooltip.style.top = Math.max(8, rect.top) + "px";
+                  }
+
+                  function hideSessionHint() {
+                    tooltip.classList.remove("show");
                   }
 
                   function send(action, payload) {
