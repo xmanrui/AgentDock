@@ -7,7 +7,7 @@ plugins {
 }
 
 group = "com.agentdock"
-version = "0.1.62"
+version = "0.1.63"
 
 repositories {
     maven("https://maven.aliyun.com/repository/public")
@@ -52,12 +52,37 @@ intellijPlatform {
         }
 
         description = """
-            AgentDock provides project-level Codex and Claude Code CLI session management inside JetBrains IDEs.
+            <p>Manage project-scoped AI CLI sessions without leaving your JetBrains IDE.</p>
+            <p>AgentDock brings local Codex CLI and Claude Code CLI sessions into a dedicated tool window where you can:</p>
+            <ul>
+                <li>discover sessions associated with the current project;</li>
+                <li>create, resume, search, rename, pin, and archive sessions;</li>
+                <li>launch provider commands in the built-in Terminal tool window;</li>
+                <li>view provider usage limits when supported by the local account configuration.</li>
+            </ul>
+            <p>AgentDock is local-first, does not operate a cloud service, and does not collect analytics or telemetry.</p>
+            <p><b>Requirements:</b> JetBrains IDE 2025.2 or later and a locally installed Codex CLI or Claude Code CLI for the corresponding provider.</p>
+            <p>
+                <a href="https://github.com/xmanrui/AgentDock">Source code and documentation</a>
+                ·
+                <a href="https://github.com/xmanrui/AgentDock/blob/main/PRIVACY.md">Privacy Policy</a>
+            </p>
+            <p>AgentDock is an independent open-source project and is not affiliated with, endorsed by, or sponsored by OpenAI, Anthropic, or JetBrains.</p>
         """.trimIndent()
 
         changeNotes = """
-            Simplifies the provider usage header to show only the provider logo and Usage label.
+            Skips broken CLI installations and falls back to a working Codex executable when available.
         """.trimIndent()
+    }
+
+    signing {
+        certificateChain = providers.environmentVariable("CERTIFICATE_CHAIN")
+        privateKey = providers.environmentVariable("PRIVATE_KEY")
+        password = providers.environmentVariable("PRIVATE_KEY_PASSWORD")
+    }
+
+    publishing {
+        token = providers.environmentVariable("PUBLISH_TOKEN")
     }
 
     pluginVerification {

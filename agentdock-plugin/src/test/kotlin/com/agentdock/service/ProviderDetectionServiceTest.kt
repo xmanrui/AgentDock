@@ -55,4 +55,48 @@ class ProviderDetectionServiceTest {
             home.deleteRecursively()
         }
     }
+
+    @Test
+    fun `skips broken path executable and uses a working fallback`() {
+        val home = Files.createTempDirectory("agentdock-provider-fallback").toFile()
+        val brokenDirectory = File(home, "broken-bin").apply { mkdirs() }
+        val broken = File(brokenDirectory, "codex").apply {
+            writeText("#!/bin/sh\nexit 1\n")
+            setExecutable(true)
+        }
+        val fallback = File(home, ".local/bin/codex").apply {
+            parentFile.mkdirs()
+            writeText("#!/bin/sh\nexit 0\n")
+            setExecutable(true)
+        }
+        val provider = CLIProvider.defaultProviders().first().copy(executable = "codex")
+
+        try {
+            val result = assertIs<ProviderDetectionResult.Available>(
+                ProviderDetectionService(
+                    os = OperatingSystem.Mac,
+                    userHome = home,
+                    pathEnvironment = brokenDirectory.absolutePath
+                ).detect(provider)
+            )
+
+            assertEquals(fallback.absolutePath, result.executablePath)
+        } finally {
+            home.deleteRecursively()
+        }
+    }
+
+    @Test
+    fun `returns missing when direct executable exists but cannot start`() {
+        val executable = File.createTempFile("agentdock-provider-broken", ".sh")
+        executable.writeText("#!/bin/sh\nexit 1\n")
+        executable.setExecutable(true)
+        val provider = CLIProvider.defaultProviders().first().copy(executable = executable.absolutePath)
+
+        try {
+            assertIs<ProviderDetectionResult.Missing>(ProviderDetectionService().detect(provider))
+        } finally {
+            executable.delete()
+        }
+    }
 }

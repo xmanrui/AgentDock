@@ -211,12 +211,15 @@ Only sessions whose working directories are inside the current JetBrains project
 
 ### Data and Privacy
 
-- By default, AgentDock stores only session metadata.
-- It does not store complete Terminal output.
-- It does not host or read users' AI API keys.
-- It does not sync data to the cloud by default.
+- AgentDock reads local Codex and Claude Code session files for project-scoped discovery and content previews.
+- It stores session metadata locally but does not persist a separate copy of complete transcripts or Terminal output.
+- The Claude usage feature may read local OAuth credentials and use them only to request usage information from the configured endpoint.
+- The Codex usage feature queries the locally installed Codex CLI and does not directly read a Codex API key.
+- AgentDock does not operate a cloud service and does not collect analytics or telemetry.
 - Provider settings are stored at the application level.
 - Project session metadata is stored in the project's workspace state.
+
+See the [AgentDock Privacy Policy](PRIVACY.md) for complete details.
 
 ### Known Limitations
 
@@ -231,11 +234,14 @@ Only sessions whose working directories are inside the current JetBrains project
 
 This project is released under the MIT License. See `LICENSE` for details.
 
+AgentDock is an independent open-source project and is not affiliated with, endorsed by, or sponsored by OpenAI, Anthropic, or JetBrains. Codex, Claude, Claude Code, JetBrains, and related marks belong to their respective owners.
+
 ### Reference Documents
 
 - `docs/AgentDock-PRD.md`
 - `docs/AgentDock-IMPLEMENTATION-PLAN.md`
 - `docs/TECH-STACK.md`
+- `docs/PUBLISHING.md`
 - `docs/agentdock-prototype.html`
 
 ---
@@ -457,12 +463,15 @@ AgentDock 会根据当前项目路径发现本机已有会话:
 
 ### 数据与隐私
 
-- AgentDock 默认只保存会话 metadata。
-- 不保存完整终端输出。
-- 不托管或读取用户 AI API key。
-- 不默认同步到云端。
+- AgentDock 会读取本地 Codex 和 Claude Code 会话文件，用于当前项目的会话发现和内容预览。
+- 插件只在本地保存会话 metadata，不额外持久化完整会话内容或终端输出。
+- Claude 用量功能可能读取本地 OAuth 凭据，并仅用于向配置的端点查询用量信息。
+- Codex 用量功能通过本机 Codex CLI 查询，不直接读取 Codex API key。
+- AgentDock 不运营云服务，也不收集 analytics 或 telemetry。
 - Provider 设置是 application-level 状态。
 - 项目会话 metadata 保存在项目 workspace 状态中。
+
+完整说明请参阅 [AgentDock 隐私政策](PRIVACY.md)。
 
 ### 已知限制
 
@@ -477,9 +486,12 @@ AgentDock 会根据当前项目路径发现本机已有会话:
 
 本项目基于 MIT License 开源，详见 `LICENSE`。
 
+AgentDock 是独立开源项目，与 OpenAI、Anthropic 或 JetBrains 不存在附属、认可或赞助关系。Codex、Claude、Claude Code、JetBrains 及相关商标归各自权利人所有。
+
 ### 参考文档
 
 - `docs/AgentDock-PRD.md`
 - `docs/AgentDock-IMPLEMENTATION-PLAN.md`
 - `docs/TECH-STACK.md`
+- `docs/PUBLISHING.md`
 - `docs/agentdock-prototype.html`

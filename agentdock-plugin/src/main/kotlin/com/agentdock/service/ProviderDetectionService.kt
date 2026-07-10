@@ -24,25 +24,38 @@ class ProviderDetectionService(
 
         val directFile = File(executable)
         if (executable.contains("/") || executable.contains("\\")) {
-            return if (directFile.isFile && directFile.canExecute()) {
+            return if (isUsableExecutable(directFile)) {
                 ProviderDetectionResult.Available(directFile.absolutePath)
             } else {
-                ProviderDetectionResult.Missing("Executable is not available: $executable")
+                ProviderDetectionResult.Missing("Executable is not available or failed to start: $executable")
             }
         }
 
-        val pathMatch = findInPath(executable)
-            ?: findInCommonDirectories(executable)
-            ?: findInVersionManagerDirectories(executable)
-            ?: findWithLoginShell(executable)
+        var candidateFound = false
+        val pathMatch = executableCandidates(executable)
+            .distinctBy { it.absolutePath }
+            .firstOrNull { candidate ->
+                candidateFound = true
+                isUsableExecutable(candidate)
+            }
         return if (pathMatch != null) {
             ProviderDetectionResult.Available(pathMatch.absolutePath)
+        } else if (candidateFound) {
+            ProviderDetectionResult.Missing("Executable candidates were found but failed to start: $executable")
         } else {
             ProviderDetectionResult.Missing("Executable not found in IDE PATH or login shell: $executable")
         }
     }
 
-    private fun findInPath(executable: String): File? {
+    private fun executableCandidates(executable: String): Sequence<File> = sequence {
+        yieldAll(findInPath(executable))
+        yieldAll(findInCommonDirectories(executable))
+        yieldAll(findInVersionManagerDirectories(executable))
+        yieldAll(findInApplicationBundles(executable))
+        yieldAll(findWithLoginShell(executable))
+    }
+
+    private fun findInPath(executable: String): Sequence<File> {
         val candidates = if (os == OperatingSystem.Windows) {
             val pathext = System.getenv("PATHEXT")
                 ?.split(";")
@@ -57,10 +70,10 @@ class ProviderDetectionService(
             .asSequence()
             .filter { it.isNotBlank() }
             .flatMap { dir -> candidates.asSequence().map { File(dir, it) } }
-            .firstOrNull { it.isFile && it.canExecute() }
+            .filter { it.isFile && it.canExecute() }
     }
 
-    private fun findInCommonDirectories(executable: String): File? {
+    private fun findInCommonDirectories(executable: String): Sequence<File> {
         val candidates = listOf(
             File(userHome, ".local/bin"),
             File(userHome, "bin"),
@@ -75,10 +88,10 @@ class ProviderDetectionService(
         return candidates
             .asSequence()
             .map { File(it, executable) }
-            .firstOrNull { it.isFile && it.canExecute() }
+            .filter { it.isFile && it.canExecute() }
     }
 
-    private fun findInVersionManagerDirectories(executable: String): File? {
+    private fun findInVersionManagerDirectories(executable: String): Sequence<File> = sequence {
         val directDirectories = listOf(
             File(userHome, ".volta/bin"),
             File(userHome, ".asdf/shims"),
@@ -86,18 +99,17 @@ class ProviderDetectionService(
             File(userHome, ".npm-global/bin"),
             File(userHome, "Library/pnpm")
         )
-        directDirectories
+        yieldAll(directDirectories
             .asSequence()
             .map { File(it, executable) }
-            .firstOrNull { it.isFile && it.canExecute() }
-            ?.let { return it }
+            .filter { it.isFile && it.canExecute() })
 
         val versionedDirectories = listOf(
             VersionedExecutableRoot(File(userHome, ".nvm/versions/node"), "bin"),
             VersionedExecutableRoot(File(userHome, ".fnm/node-versions"), "installation/bin"),
             VersionedExecutableRoot(File(userHome, ".local/share/fnm/node-versions"), "installation/bin")
         )
-        return versionedDirectories
+        yieldAll(versionedDirectories
             .asSequence()
             .flatMap { root ->
                 root.directory.listFiles()
@@ -113,8 +125,18 @@ class ProviderDetectionService(
                     }
             }
             .filter { it.file.isFile && it.file.canExecute() }
-            .maxWithOrNull(compareBy<VersionedExecutable> { it.versionScore }.thenBy { it.modifiedAt })
-            ?.file
+            .sortedWith(compareByDescending<VersionedExecutable> { it.versionScore }.thenByDescending { it.modifiedAt })
+            .map { it.file })
+    }
+
+    private fun findInApplicationBundles(executable: String): Sequence<File> {
+        if (os != OperatingSystem.Mac || executable != "codex") return emptySequence()
+        return listOf(
+            File("/Applications/Codex.app/Contents/Resources/codex"),
+            File("/Applications/ChatGPT.app/Contents/Resources/codex"),
+            File(userHome, "Applications/Codex.app/Contents/Resources/codex"),
+            File(userHome, "Applications/ChatGPT.app/Contents/Resources/codex")
+        ).asSequence().filter { it.isFile && it.canExecute() }
     }
 
     private fun versionScore(directoryName: String): Long {
@@ -128,10 +150,10 @@ class ProviderDetectionService(
             components.getOrElse(2) { 0L }
     }
 
-    private fun findWithLoginShell(executable: String): File? {
-        if (os == OperatingSystem.Windows) return null
+    private fun findWithLoginShell(executable: String): Sequence<File> {
+        if (os == OperatingSystem.Windows) return emptySequence()
 
-        val shell = shellPath() ?: return null
+        val shell = shellPath() ?: return emptySequence()
         return listOf("-lc", "-lic")
             .asSequence()
             .mapNotNull { flags -> runShellCommand(shell, flags, "command -v ${ShellEscaper().escape(executable, os)}") }
@@ -139,7 +161,32 @@ class ProviderDetectionService(
             .map { it.trim() }
             .filter { it.startsWith("/") }
             .map { File(it) }
-            .firstOrNull { it.isFile && it.canExecute() }
+            .filter { it.isFile && it.canExecute() }
+    }
+
+    private fun isUsableExecutable(executable: File): Boolean {
+        if (!executable.isFile || !executable.canExecute()) return false
+        return try {
+            val processBuilder = ProcessBuilder(executable.absolutePath, "--version")
+                .redirectOutput(ProcessBuilder.Redirect.DISCARD)
+                .redirectError(ProcessBuilder.Redirect.DISCARD)
+            val executableDirectory = executable.absoluteFile.parentFile
+            if (executableDirectory != null) {
+                val existingPath = processBuilder.environment()["PATH"].orEmpty()
+                processBuilder.environment()["PATH"] = executableDirectory.absolutePath +
+                    if (existingPath.isBlank()) "" else File.pathSeparator + existingPath
+            }
+            val process = processBuilder.start()
+            val completed = process.waitFor(EXECUTABLE_PROBE_TIMEOUT_SECONDS, TimeUnit.SECONDS)
+            if (!completed) {
+                process.destroyForcibly()
+                false
+            } else {
+                process.exitValue() == 0
+            }
+        } catch (_: Exception) {
+            false
+        }
     }
 
     private fun shellPath(): String? {
@@ -180,4 +227,8 @@ class ProviderDetectionService(
         val versionScore: Long,
         val modifiedAt: Long
     )
+
+    companion object {
+        private const val EXECUTABLE_PROBE_TIMEOUT_SECONDS = 3L
+    }
 }
