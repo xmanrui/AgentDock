@@ -7,7 +7,7 @@ plugins {
 }
 
 group = "com.agentdock"
-version = "0.1.63"
+version = "0.1.65"
 
 repositories {
     maven("https://maven.aliyun.com/repository/public")
@@ -75,7 +75,7 @@ intellijPlatform {
         """.trimIndent()
 
         changeNotes = """
-            Skips broken CLI installations and falls back to a working Codex executable when available.
+            Adds balanced chat avatars for provider replies and right-aligned user questions in session previews.
         """.trimIndent()
     }
 

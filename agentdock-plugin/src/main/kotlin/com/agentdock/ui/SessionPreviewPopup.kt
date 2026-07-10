@@ -1,11 +1,14 @@
 package com.agentdock.ui
 
 import com.agentdock.model.AgentSession
+import com.agentdock.model.CLIProvider
 import com.agentdock.service.SessionContentPreview
 import com.agentdock.service.SessionContentRole
+import com.intellij.openapi.util.IconLoader
 import com.intellij.util.ui.JBUI
 import java.awt.BorderLayout
 import java.awt.Color
+import java.awt.Component
 import java.awt.Dimension
 import java.awt.Font
 import java.awt.Graphics
@@ -20,11 +23,14 @@ import java.awt.event.WindowAdapter
 import java.awt.event.WindowEvent
 import java.awt.geom.RoundRectangle2D
 import javax.swing.BorderFactory
+import javax.swing.Box
+import javax.swing.BoxLayout
+import javax.swing.Icon
 import javax.swing.JComponent
-import javax.swing.JEditorPane
 import javax.swing.JLabel
 import javax.swing.JPanel
 import javax.swing.JScrollPane
+import javax.swing.JTextArea
 import javax.swing.JWindow
 import javax.swing.ScrollPaneConstants
 import javax.swing.SwingUtilities
@@ -133,7 +139,7 @@ internal class SessionPreviewPopup(
         val root = RoundedPopupPanel(BorderLayout(), background, line, JBUI.scale(CORNER_RADIUS)).apply {
             border = JBUI.Borders.empty(1)
             preferredSize = popupSize
-            accessibleContext.accessibleName = "Session conversation preview"
+            accessibleContext?.accessibleName = "Session conversation preview"
         }
 
         val title = JLabel(ellipsize(session.name, MAX_TITLE_LENGTH)).apply {
@@ -153,18 +159,17 @@ internal class SessionPreviewPopup(
         }
         root.add(header, BorderLayout.NORTH)
 
-        val editor = JEditorPane("text/html", SessionPreviewHtml.render(providerName, preview)).apply {
-            isEditable = false
-            isOpaque = true
-            this.background = Color(0x1b, 0x1f, 0x1b)
-            border = BorderFactory.createEmptyBorder()
-            putClientProperty(JEditorPane.HONOR_DISPLAY_PROPERTIES, true)
-            accessibleContext.accessibleName = "Conversation messages"
-            caretPosition = 0
+        val conversation = SessionPreviewConversationPanel(
+            providerName = providerName,
+            providerIcon = SessionProviderIcons.forProvider(session.providerId),
+            preview = preview,
+            contentWidth = popupSize.width - JBUI.scale(28)
+        ).apply {
+            accessibleContext?.accessibleName = "Conversation messages"
         }
-        val scrollPane = JScrollPane(editor).apply {
+        val scrollPane = JScrollPane(conversation).apply {
             border = BorderFactory.createMatteBorder(1, 0, 0, 0, Color(0x34, 0x3b, 0x35))
-            viewport.background = editor.background
+            viewport.background = conversation.background
             verticalScrollBarPolicy = ScrollPaneConstants.VERTICAL_SCROLLBAR_AS_NEEDED
             horizontalScrollBarPolicy = ScrollPaneConstants.HORIZONTAL_SCROLLBAR_NEVER
             verticalScrollBar.unitIncrement = JBUI.scale(18)
@@ -289,70 +294,300 @@ internal class SessionPreviewPopup(
         private const val HIDE_GRACE_MS = 220
         private const val POINTER_WATCH_INTERVAL_MS = 120
     }
+
+    private object SessionProviderIcons {
+        private val codex = IconLoader.getIcon("/icons/codex.svg", SessionProviderIcons::class.java)
+        private val claude = IconLoader.getIcon("/icons/claude.svg", SessionProviderIcons::class.java)
+
+        fun forProvider(providerId: String): Icon? {
+            return when (providerId) {
+                CLIProvider.CODEX_ID -> codex
+                CLIProvider.CLAUDE_CODE_ID -> claude
+                else -> null
+            }
+        }
+    }
 }
 
-internal object SessionPreviewHtml {
-    fun render(providerName: String, preview: SessionContentPreview): String {
-        val assistantLabel = escapeHtml(providerName)
-        val messages = buildString {
-            if (preview.messages.isEmpty()) {
-                append("<div class=\"empty\">No conversation content is available.</div>")
-            } else {
-                preview.messages.forEachIndexed { index, message ->
-                    append("<div class=\"message\">")
-                    append("<div class=\"role ")
-                    append(if (message.role == SessionContentRole.User) "user\">You" else "assistant\">$assistantLabel")
-                    append("</div><div class=\"copy\">")
-                    append(escapeHtml(message.text).replace("\n", "<br>"))
-                    append("</div></div>")
-                    if (index == 0 && preview.omittedMessageCount > 0) {
-                        append("<div class=\"omitted\">")
-                        append(preview.omittedMessageCount)
-                        append(if (preview.omittedMessageCount == 1) " earlier message omitted" else " earlier messages omitted")
-                        append("</div>")
-                    }
+internal enum class SessionMessageSide {
+    Assistant,
+    User
+}
+
+internal class SessionPreviewConversationPanel(
+    providerName: String,
+    providerIcon: Icon?,
+    preview: SessionContentPreview,
+    contentWidth: Int
+) : JPanel() {
+    private val mutableMessageRows = mutableListOf<SessionChatMessageRow>()
+    val messageRows: List<SessionChatMessageRow> get() = mutableMessageRows
+    private val mutableStatusMessages = mutableListOf<String>()
+    val statusMessages: List<String> get() = mutableStatusMessages
+
+    init {
+        layout = BoxLayout(this, BoxLayout.Y_AXIS)
+        background = CHAT_BACKGROUND
+        border = JBUI.Borders.empty(7, 10, 10, 10)
+        val rowWidth = (contentWidth - JBUI.scale(20)).coerceAtLeast(JBUI.scale(220))
+
+        if (preview.messages.isEmpty()) {
+            add(statusRow("No conversation content is available.", rowWidth))
+        } else {
+            preview.messages.forEachIndexed { index, message ->
+                val row = SessionChatMessageRow(
+                    role = message.role,
+                    messageText = message.text,
+                    providerName = providerName,
+                    providerIcon = providerIcon,
+                    contentWidth = rowWidth
+                )
+                mutableMessageRows += row
+                add(row)
+                if (index == 0 && preview.omittedMessageCount > 0) {
+                    val count = preview.omittedMessageCount
+                    add(statusRow("$count earlier ${if (count == 1) "message" else "messages"} omitted", rowWidth))
                 }
             }
-            preview.notice?.takeIf { it.isNotBlank() }?.let { notice ->
-                append("<div class=\"notice\">")
-                append(escapeHtml(notice))
-                append("</div>")
-            }
         }
-        return """
-            <html>
-            <head>
-              <style>
-                body { margin: 0; padding: 0; color: #eef2ec; background: #1b1f1b; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; font-size: 12px; }
-                .message { margin: 0; padding: 11px 14px 12px; border-bottom: 1px solid #29302a; }
-                .role { margin: 0 0 5px; font-size: 10px; font-weight: bold; }
-                .role.user { color: #73a7ff; }
-                .role.assistant { color: #78d992; }
-                .copy { color: #d8ded6; line-height: 1.45; }
-                .omitted { padding: 7px 14px; color: #889287; background: #20241f; border-bottom: 1px solid #29302a; font-size: 10px; text-align: center; }
-                .notice, .empty { padding: 12px 14px; color: #889287; line-height: 1.4; }
-                .notice { border-top: 1px solid #29302a; }
-              </style>
-            </head>
-            <body>$messages</body>
-            </html>
-        """.trimIndent()
+        preview.notice?.takeIf { it.isNotBlank() }?.let { notice ->
+            add(statusRow(notice, rowWidth))
+        }
+        add(Box.createVerticalGlue().apply { setAlignmentX(Component.LEFT_ALIGNMENT) })
     }
 
-    private fun escapeHtml(value: String): String {
-        return buildString(value.length) {
-            value.forEach { character ->
-                append(
-                    when (character) {
-                        '&' -> "&amp;"
-                        '<' -> "&lt;"
-                        '>' -> "&gt;"
-                        '"' -> "&quot;"
-                        '\'' -> "&#39;"
-                        else -> character
-                    }
-                )
-            }
+    private fun statusRow(text: String, width: Int): JComponent {
+        mutableStatusMessages += text
+        return JPanel(BorderLayout()).apply {
+            isOpaque = false
+            alignmentX = LEFT_ALIGNMENT
+            val height = JBUI.scale(30)
+            preferredSize = Dimension(width, height)
+            minimumSize = Dimension(0, height)
+            maximumSize = Dimension(Int.MAX_VALUE, height)
+            add(JLabel(text, JLabel.CENTER).apply {
+                foreground = STATUS_TEXT
+                font = font.deriveFont((font.size2D - 1f).coerceAtLeast(10f))
+                border = JBUI.Borders.empty(7, 8)
+                accessibleContext?.accessibleName = text
+            }, BorderLayout.CENTER)
         }
+    }
+
+    companion object {
+        private val CHAT_BACKGROUND = Color(0x1b, 0x1f, 0x1b)
+        private val STATUS_TEXT = Color(0x88, 0x92, 0x87)
+    }
+}
+
+internal class SessionChatMessageRow(
+    role: SessionContentRole,
+    val messageText: String,
+    providerName: String,
+    providerIcon: Icon?,
+    contentWidth: Int
+) : JPanel() {
+    val side: SessionMessageSide = if (role == SessionContentRole.User) {
+        SessionMessageSide.User
+    } else {
+        SessionMessageSide.Assistant
+    }
+    val roleLabel: String = if (side == SessionMessageSide.User) "Your question" else "$providerName reply"
+    val showsProviderAvatar: Boolean = side == SessionMessageSide.Assistant
+    val showsUserAvatar: Boolean = side == SessionMessageSide.User
+
+    init {
+        layout = BoxLayout(this, BoxLayout.X_AXIS)
+        isOpaque = false
+        alignmentX = LEFT_ALIGNMENT
+        border = JBUI.Borders.empty(6, 0)
+
+        val avatarSize = JBUI.scale(30)
+        val gap = JBUI.scale(7)
+        val maximumBubbleWidth = minOf(
+            JBUI.scale(MAX_BUBBLE_WIDTH),
+            contentWidth - avatarSize - gap
+        ).coerceAtLeast(JBUI.scale(MIN_BUBBLE_WIDTH))
+        val bubble = SessionChatBubble(side, messageText, maximumBubbleWidth)
+
+        if (side == SessionMessageSide.Assistant) {
+            add(SessionProviderAvatar(providerIcon, avatarSize))
+            add(Box.createHorizontalStrut(gap))
+            add(bubble)
+            add(Box.createHorizontalGlue())
+        } else {
+            add(Box.createHorizontalGlue())
+            add(bubble)
+            add(Box.createHorizontalStrut(gap))
+            add(SessionUserAvatar(avatarSize))
+        }
+        accessibleContext?.accessibleName = roleLabel
+        accessibleContext?.accessibleDescription = messageText
+
+        val height = maxOf(avatarSize, bubble.preferredSize.height) + JBUI.scale(12)
+        preferredSize = Dimension(contentWidth, height)
+        minimumSize = Dimension(0, height)
+        maximumSize = Dimension(Int.MAX_VALUE, height)
+    }
+
+    companion object {
+        private const val MAX_BUBBLE_WIDTH = 328
+        private const val MIN_BUBBLE_WIDTH = 72
+    }
+}
+
+private class SessionChatBubble(
+    private val side: SessionMessageSide,
+    text: String,
+    maximumBubbleWidth: Int
+) : JPanel(BorderLayout()) {
+    private val fillColor = if (side == SessionMessageSide.User) USER_BUBBLE else ASSISTANT_BUBBLE
+    private val lineColor = if (side == SessionMessageSide.User) USER_BUBBLE else ASSISTANT_LINE
+    private val tailWidth = JBUI.scale(7)
+    private val cornerRadius = JBUI.scale(8)
+
+    init {
+        isOpaque = false
+        val horizontalPadding = JBUI.scale(11)
+        val verticalPadding = JBUI.scale(8)
+        border = if (side == SessionMessageSide.Assistant) {
+            JBUI.Borders.empty(verticalPadding, horizontalPadding + tailWidth, verticalPadding, horizontalPadding)
+        } else {
+            JBUI.Borders.empty(verticalPadding, horizontalPadding, verticalPadding, horizontalPadding + tailWidth)
+        }
+
+        val textArea = JTextArea(text).apply {
+            isEditable = false
+            isFocusable = false
+            isOpaque = false
+            lineWrap = true
+            wrapStyleWord = true
+            foreground = if (side == SessionMessageSide.User) USER_TEXT else ASSISTANT_TEXT
+            font = JLabel().font
+            border = null
+            margin = Insets(0, 0, 0, 0)
+            accessibleContext?.accessibleName = if (side == SessionMessageSide.User) "You" else "AI"
+        }
+        val availableTextWidth = (maximumBubbleWidth - horizontalPadding * 2 - tailWidth)
+            .coerceAtLeast(JBUI.scale(48))
+        val measuredTextWidth = text.lineSequence()
+            .maxOfOrNull { line -> textArea.getFontMetrics(textArea.font).stringWidth(line.ifEmpty { " " }) }
+            ?.plus(JBUI.scale(2))
+            ?: JBUI.scale(48)
+        val textWidth = measuredTextWidth.coerceIn(JBUI.scale(48), availableTextWidth)
+        textArea.setSize(Dimension(textWidth, JBUI.scale(10_000)))
+        val textHeight = textArea.preferredSize.height.coerceAtLeast(textArea.getFontMetrics(textArea.font).height)
+        textArea.preferredSize = Dimension(textWidth, textHeight)
+        add(textArea, BorderLayout.CENTER)
+        val naturalSize = preferredSize
+        minimumSize = naturalSize
+        maximumSize = naturalSize
+    }
+
+    override fun paintComponent(graphics: Graphics) {
+        val copy = graphics.create() as Graphics2D
+        copy.setRenderingHint(RenderingHints.KEY_ANTIALIASING, RenderingHints.VALUE_ANTIALIAS_ON)
+        val bodyX = if (side == SessionMessageSide.Assistant) tailWidth else 0
+        val bodyWidth = (width - tailWidth).coerceAtLeast(0)
+        val bodyHeight = (height - 1).coerceAtLeast(0)
+        copy.color = fillColor
+        copy.fillRoundRect(bodyX, 0, bodyWidth, bodyHeight, cornerRadius * 2, cornerRadius * 2)
+
+        val tailCenter = minOf(JBUI.scale(16), height / 2)
+        val tail = if (side == SessionMessageSide.Assistant) {
+            java.awt.Polygon(
+                intArrayOf(tailWidth, tailWidth, 0),
+                intArrayOf(tailCenter - JBUI.scale(5), tailCenter + JBUI.scale(5), tailCenter),
+                3
+            )
+        } else {
+            java.awt.Polygon(
+                intArrayOf(width - tailWidth, width - tailWidth, width),
+                intArrayOf(tailCenter - JBUI.scale(5), tailCenter + JBUI.scale(5), tailCenter),
+                3
+            )
+        }
+        copy.fillPolygon(tail)
+        if (side == SessionMessageSide.Assistant) {
+            copy.color = lineColor
+            copy.drawRoundRect(bodyX, 0, (bodyWidth - 1).coerceAtLeast(0), bodyHeight, cornerRadius * 2, cornerRadius * 2)
+        }
+        copy.dispose()
+    }
+
+    companion object {
+        private val ASSISTANT_BUBBLE = Color(0x2a, 0x2f, 0x2a)
+        private val ASSISTANT_LINE = Color(0x3a, 0x42, 0x3b)
+        private val ASSISTANT_TEXT = Color(0xee, 0xf2, 0xec)
+        private val USER_BUBBLE = Color(0x95, 0xec, 0x69)
+        private val USER_TEXT = Color(0x10, 0x17, 0x10)
+    }
+}
+
+private class SessionProviderAvatar(icon: Icon?, size: Int) : JPanel(BorderLayout()) {
+    init {
+        isOpaque = false
+        preferredSize = Dimension(size, size)
+        minimumSize = preferredSize
+        maximumSize = preferredSize
+        icon?.let { add(JLabel(it).apply { horizontalAlignment = JLabel.CENTER }, BorderLayout.CENTER) }
+        accessibleContext?.accessibleName = "AI provider"
+    }
+
+    override fun paintComponent(graphics: Graphics) {
+        val copy = graphics.create() as Graphics2D
+        copy.setRenderingHint(RenderingHints.KEY_ANTIALIASING, RenderingHints.VALUE_ANTIALIAS_ON)
+        copy.color = AVATAR_BACKGROUND
+        copy.fillRoundRect(0, 0, width, height, JBUI.scale(7), JBUI.scale(7))
+        copy.color = AVATAR_LINE
+        copy.drawRoundRect(0, 0, (width - 1).coerceAtLeast(0), (height - 1).coerceAtLeast(0), JBUI.scale(7), JBUI.scale(7))
+        copy.dispose()
+    }
+
+    companion object {
+        private val AVATAR_BACKGROUND = Color(0x25, 0x2a, 0x25)
+        private val AVATAR_LINE = Color(0x3d, 0x45, 0x3e)
+    }
+}
+
+private class SessionUserAvatar(size: Int) : JPanel() {
+    init {
+        isOpaque = false
+        preferredSize = Dimension(size, size)
+        minimumSize = preferredSize
+        maximumSize = preferredSize
+        accessibleContext?.accessibleName = "You"
+    }
+
+    override fun paintComponent(graphics: Graphics) {
+        val copy = graphics.create() as Graphics2D
+        copy.setRenderingHint(RenderingHints.KEY_ANTIALIASING, RenderingHints.VALUE_ANTIALIAS_ON)
+        val radius = JBUI.scale(7)
+        copy.color = AVATAR_BACKGROUND
+        copy.fillRoundRect(0, 0, width, height, radius, radius)
+        copy.color = AVATAR_LINE
+        copy.drawRoundRect(0, 0, (width - 1).coerceAtLeast(0), (height - 1).coerceAtLeast(0), radius, radius)
+
+        val centerX = width / 2
+        val headSize = JBUI.scale(7)
+        copy.color = USER_ICON
+        copy.fillOval(centerX - headSize / 2, JBUI.scale(6), headSize, headSize)
+        val shoulderWidth = JBUI.scale(16)
+        val shoulderHeight = JBUI.scale(10)
+        copy.fillRoundRect(
+            centerX - shoulderWidth / 2,
+            JBUI.scale(16),
+            shoulderWidth,
+            shoulderHeight,
+            JBUI.scale(8),
+            JBUI.scale(8)
+        )
+        copy.dispose()
+    }
+
+    companion object {
+        private val AVATAR_BACKGROUND = Color(0x2d, 0x58, 0x38)
+        private val AVATAR_LINE = Color(0x4d, 0x79, 0x58)
+        private val USER_ICON = Color(0xe3, 0xf6, 0xe7)
     }
 }
