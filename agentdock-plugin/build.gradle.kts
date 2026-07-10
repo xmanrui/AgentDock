@@ -39,6 +39,10 @@ tasks {
     test {
         useJUnitPlatform()
     }
+
+    named("verifyPluginSignature") {
+        dependsOn("signPlugin")
+    }
 }
 
 intellijPlatform {
