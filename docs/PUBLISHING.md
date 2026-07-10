@@ -39,13 +39,13 @@ Install the generated ZIP from `agentdock-plugin/build/distributions/` into a cl
 
 ## Signing Secrets
 
-The Gradle build reads signing values only from environment variables:
+The Gradle build reads signing file locations and the key password only from environment variables:
 
-- `CERTIFICATE_CHAIN`
-- `PRIVATE_KEY`
+- `CERTIFICATE_CHAIN_FILE`
+- `PRIVATE_KEY_FILE`
 - `PRIVATE_KEY_PASSWORD`
 
-It reads the Marketplace token from `PUBLISH_TOKEN`. Never commit any of these values to the repository. Multiline certificate and key values can be stored as protected CI secrets; use Base64-encoded values where the environment does not support multiline secrets.
+It reads the Marketplace token from `PUBLISH_TOKEN`. Never commit any of these values or the referenced private key to the repository. For local releases, keep signing files outside the repository. In CI, restore certificate and key files from protected secrets before invoking Gradle.
 
 With the signing variables configured, create the signed archive with:
 
