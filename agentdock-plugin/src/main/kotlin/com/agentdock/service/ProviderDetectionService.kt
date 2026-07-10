@@ -7,7 +7,11 @@ import com.agentdock.util.OperatingSystem
 import java.io.File
 import java.util.concurrent.TimeUnit
 
-class ProviderDetectionService(private val os: OperatingSystem = OperatingSystem.current()) {
+class ProviderDetectionService(
+    private val os: OperatingSystem = OperatingSystem.current(),
+    private val userHome: File = File(System.getProperty("user.home").orEmpty()),
+    private val pathEnvironment: String = System.getenv("PATH").orEmpty()
+) {
     fun detect(provider: CLIProvider): ProviderDetectionResult {
         if (!provider.enabled) {
             return ProviderDetectionResult.Disabled()
@@ -29,6 +33,7 @@ class ProviderDetectionService(private val os: OperatingSystem = OperatingSystem
 
         val pathMatch = findInPath(executable)
             ?: findInCommonDirectories(executable)
+            ?: findInVersionManagerDirectories(executable)
             ?: findWithLoginShell(executable)
         return if (pathMatch != null) {
             ProviderDetectionResult.Available(pathMatch.absolutePath)
@@ -38,7 +43,6 @@ class ProviderDetectionService(private val os: OperatingSystem = OperatingSystem
     }
 
     private fun findInPath(executable: String): File? {
-        val path = System.getenv("PATH").orEmpty()
         val candidates = if (os == OperatingSystem.Windows) {
             val pathext = System.getenv("PATHEXT")
                 ?.split(";")
@@ -49,7 +53,7 @@ class ProviderDetectionService(private val os: OperatingSystem = OperatingSystem
             listOf(executable)
         }
 
-        return path.split(File.pathSeparator)
+        return pathEnvironment.split(File.pathSeparator)
             .asSequence()
             .filter { it.isNotBlank() }
             .flatMap { dir -> candidates.asSequence().map { File(dir, it) } }
@@ -57,23 +61,71 @@ class ProviderDetectionService(private val os: OperatingSystem = OperatingSystem
     }
 
     private fun findInCommonDirectories(executable: String): File? {
-        val home = System.getProperty("user.home").orEmpty()
         val candidates = listOf(
-            "$home/.local/bin",
-            "$home/bin",
-            "$home/.bun/bin",
-            "/opt/homebrew/bin",
-            "/opt/homebrew/sbin",
-            "/usr/local/bin",
-            "/usr/bin",
-            "/bin"
+            File(userHome, ".local/bin"),
+            File(userHome, "bin"),
+            File(userHome, ".bun/bin"),
+            File("/opt/homebrew/bin"),
+            File("/opt/homebrew/sbin"),
+            File("/usr/local/bin"),
+            File("/usr/bin"),
+            File("/bin")
         )
 
         return candidates
             .asSequence()
-            .filter { it.isNotBlank() }
             .map { File(it, executable) }
             .firstOrNull { it.isFile && it.canExecute() }
+    }
+
+    private fun findInVersionManagerDirectories(executable: String): File? {
+        val directDirectories = listOf(
+            File(userHome, ".volta/bin"),
+            File(userHome, ".asdf/shims"),
+            File(userHome, ".local/share/mise/shims"),
+            File(userHome, ".npm-global/bin"),
+            File(userHome, "Library/pnpm")
+        )
+        directDirectories
+            .asSequence()
+            .map { File(it, executable) }
+            .firstOrNull { it.isFile && it.canExecute() }
+            ?.let { return it }
+
+        val versionedDirectories = listOf(
+            VersionedExecutableRoot(File(userHome, ".nvm/versions/node"), "bin"),
+            VersionedExecutableRoot(File(userHome, ".fnm/node-versions"), "installation/bin"),
+            VersionedExecutableRoot(File(userHome, ".local/share/fnm/node-versions"), "installation/bin")
+        )
+        return versionedDirectories
+            .asSequence()
+            .flatMap { root ->
+                root.directory.listFiles()
+                    ?.asSequence()
+                    .orEmpty()
+                    .filter { it.isDirectory }
+                    .map { versionDirectory ->
+                        VersionedExecutable(
+                            file = File(File(versionDirectory, root.relativeBinDirectory), executable),
+                            versionScore = versionScore(versionDirectory.name),
+                            modifiedAt = versionDirectory.lastModified()
+                        )
+                    }
+            }
+            .filter { it.file.isFile && it.file.canExecute() }
+            .maxWithOrNull(compareBy<VersionedExecutable> { it.versionScore }.thenBy { it.modifiedAt })
+            ?.file
+    }
+
+    private fun versionScore(directoryName: String): Long {
+        val components = Regex("\\d+")
+            .findAll(directoryName)
+            .mapNotNull { it.value.toLongOrNull() }
+            .take(3)
+            .toList()
+        return components.getOrElse(0) { 0L } * 1_000_000_000L +
+            components.getOrElse(1) { 0L } * 1_000_000L +
+            components.getOrElse(2) { 0L }
     }
 
     private fun findWithLoginShell(executable: String): File? {
@@ -117,4 +169,15 @@ class ProviderDetectionService(private val os: OperatingSystem = OperatingSystem
             null
         }
     }
+
+    private data class VersionedExecutableRoot(
+        val directory: File,
+        val relativeBinDirectory: String
+    )
+
+    private data class VersionedExecutable(
+        val file: File,
+        val versionScore: Long,
+        val modifiedAt: Long
+    )
 }

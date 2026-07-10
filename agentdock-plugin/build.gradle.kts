@@ -7,7 +7,7 @@ plugins {
 }
 
 group = "com.agentdock"
-version = "0.1.56"
+version = "0.1.62"
 
 repositories {
     maven("https://maven.aliyun.com/repository/public")
@@ -56,7 +56,7 @@ intellijPlatform {
         """.trimIndent()
 
         changeNotes = """
-            Prevents an empty native AgentDock tool window from remaining after the persistent panel is collapsed.
+            Simplifies the provider usage header to show only the provider logo and Usage label.
         """.trimIndent()
     }
 

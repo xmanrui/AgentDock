@@ -492,6 +492,7 @@ object AgentDockHtmlRenderer {
                   var sessionPreviewTimer = null;
                   var hoveredSessionId = null;
                   var requestedPreviewId = null;
+                  var hoveredUsageProviderId = null;
                   var root = document.getElementById("agentdock-root");
                   var tooltip = document.getElementById("agentdock-tooltip");
                   var toast = document.getElementById("agentdock-toast");
@@ -566,7 +567,7 @@ object AgentDockHtmlRenderer {
                     var refreshState = refreshing ? ' disabled aria-busy="true" title="正在刷新会话"' : ' aria-busy="false" title="刷新会话"';
                     var providerButtons = providerOptions().map(function (provider) {
                       var active = selectedProvider === provider.id ? " active" : "";
-                      return '<button class="provider-filter' + active + '" data-provider="' + attr(provider.id) + '" title="' + attr(provider.name) + '" aria-label="' + attr(provider.name) + '">' +
+                      return '<button class="provider-filter' + active + '" data-provider="' + attr(provider.id) + '" data-provider-usage="' + attr(provider.id) + '" data-provider-name="' + attr(provider.name) + '" aria-label="' + attr(provider.name) + '">' +
                         providerLogo(provider.id) +
                       '</button>';
                     }).join("");
@@ -666,6 +667,7 @@ object AgentDockHtmlRenderer {
                     root.querySelectorAll("[data-provider]").forEach(function (button) {
                       button.addEventListener("click", function () {
                         hideSessionHint();
+                        hideProviderUsage();
                         searchFocused = false;
                         selectedProvider = button.getAttribute("data-provider") || "all";
                         render({focusSearch: false});
@@ -678,9 +680,16 @@ object AgentDockHtmlRenderer {
                       allButton.addEventListener("focus", function () { showSessionHint(allButton); });
                       allButton.addEventListener("blur", hideSessionHint);
                     }
+                    root.querySelectorAll("[data-provider-usage]").forEach(function (button) {
+                      button.addEventListener("mouseenter", function () { showProviderUsage(button, true); });
+                      button.addEventListener("mouseleave", hideProviderUsage);
+                      button.addEventListener("focus", function () { showProviderUsage(button, false); });
+                      button.addEventListener("blur", hideProviderUsage);
+                    });
                     root.querySelectorAll("[data-action]").forEach(function (button) {
                       button.addEventListener("click", function () {
                         hideSessionPreview(true);
+                        hideProviderUsage();
                         var action = button.getAttribute("data-action");
                         var id = button.getAttribute("data-id");
                         if (action === "refresh") beginReloadFeedback();
@@ -699,6 +708,7 @@ object AgentDockHtmlRenderer {
                     if (sessionsList) {
                       sessionsList.addEventListener("scroll", function () {
                         hideSessionPreview(true);
+                        hideProviderUsage();
                       }, {passive: true});
                     }
                   }
@@ -707,6 +717,7 @@ object AgentDockHtmlRenderer {
                     var forceSearchFocus = Boolean(options && options.focusSearch);
                     var keepSearchFocus = forceSearchFocus || searchFocused;
                     hideSessionHint();
+                    hideProviderUsage();
                     hideSessionPreview(true);
                     root.innerHTML = renderSearch() + renderFilters() + renderList();
                     if (keepSearchFocus) searchFocused = true;
@@ -729,6 +740,28 @@ object AgentDockHtmlRenderer {
 
                   function hideSessionHint() {
                     tooltip.classList.remove("show");
+                  }
+
+                  function showProviderUsage(button, usePointer) {
+                    var providerId = button.getAttribute("data-provider-usage") || "";
+                    if (!providerId) return;
+                    hideSessionHint();
+                    hoveredUsageProviderId = providerId;
+                    var rect = button.getBoundingClientRect();
+                    send("provider-usage-show", {
+                      providerId: providerId,
+                      left: Math.round(rect.left),
+                      top: Math.round(rect.top),
+                      width: Math.round(rect.width),
+                      height: Math.round(rect.height),
+                      usePointer: Boolean(usePointer)
+                    });
+                  }
+
+                  function hideProviderUsage() {
+                    if (!hoveredUsageProviderId) return;
+                    hoveredUsageProviderId = null;
+                    send("provider-usage-hide", {});
                   }
 
                   function scheduleSessionPreview(title) {
@@ -812,7 +845,11 @@ object AgentDockHtmlRenderer {
                     window.setTimeout(function () { toast.classList.remove("show"); }, 2400);
                   }
 
-                  return {render: render, receive: receive, showError: showError};
+                  return {
+                    render: render,
+                    receive: receive,
+                    showError: showError
+                  };
                 })();
                 window.AgentDock.render();
               </script>

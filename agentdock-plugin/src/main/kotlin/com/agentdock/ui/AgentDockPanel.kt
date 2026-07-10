@@ -8,6 +8,7 @@ import com.agentdock.service.AgentSessionOperationResult
 import com.agentdock.service.AgentSessionProjectService
 import com.agentdock.service.CLIProviderRegistry
 import com.agentdock.service.LocalSessionContentService
+import com.agentdock.service.ProviderUsageService
 import com.agentdock.util.SessionTextSanitizer
 import com.agentdock.util.TimeFormatter
 import com.google.gson.JsonObject
@@ -61,13 +62,16 @@ class AgentDockPanel(
     }
     private val refreshInFlight = AtomicBoolean(false)
     private val sessionContentService = LocalSessionContentService()
+    private val providerUsageService = ProviderUsageService()
     private val previewRequestVersion = AtomicLong(0)
+    private val providerUsageRequestVersion = AtomicLong(0)
     private var panelShowing = false
     private var sessionCount: Int = 0
     private var lastObservedToolWindowVisible: Boolean? = null
 
     val component: JComponent = browser?.component ?: fallbackComponent()
     private val sessionPreviewPopup = SessionPreviewPopup(component)
+    private val providerUsagePopup = ProviderUsagePopup(component)
     private val persistentRightToolWindowLayout = PersistentRightToolWindowLayout(
         content = component,
         nativeToolWindowComponent = { if (toolWindow.isDisposed) null else toolWindow.component },
@@ -119,7 +123,9 @@ class AgentDockPanel(
 
     override fun dispose() {
         previewRequestVersion.incrementAndGet()
+        providerUsageRequestVersion.incrementAndGet()
         sessionPreviewPopup.dispose()
+        providerUsagePopup.dispose()
         persistentRightToolWindowLayout.dispose()
         removeTerminalStateListener()
         autoRefreshTimer.stop()
@@ -134,6 +140,7 @@ class AgentDockPanel(
                 "open" -> json.string("id")?.let { openSession(it) }
                 "pin" -> json.string("id")?.let { service.togglePin(it) }
                 "refresh" -> {
+                    providerUsageService.invalidate()
                     requestBackgroundRefresh()
                     return AgentDockHtmlRenderer.refreshPendingResponseJson()
                 }
@@ -148,6 +155,18 @@ class AgentDockPanel(
                 }
                 "preview-hide" -> {
                     hideSessionPreview(immediate = json.boolean("immediate") == true)
+                    return AgentDockHtmlRenderer.interactionHandledResponseJson()
+                }
+                "provider-usage-show" -> {
+                    val providerId = json.string("providerId")
+                        ?: return AgentDockHtmlRenderer.interactionHandledResponseJson()
+                    val anchor = json.providerUsageAnchor()
+                        ?: return AgentDockHtmlRenderer.interactionHandledResponseJson()
+                    requestProviderUsage(providerId, anchor)
+                    return AgentDockHtmlRenderer.interactionHandledResponseJson()
+                }
+                "provider-usage-hide" -> {
+                    hideProviderUsage()
                     return AgentDockHtmlRenderer.interactionHandledResponseJson()
                 }
             }
@@ -217,6 +236,43 @@ class AgentDockPanel(
         }
     }
 
+    private fun requestProviderUsage(providerId: String, anchor: ProviderUsageAnchor) {
+        val provider = providerRegistry.getProvider(providerId) ?: return
+        val requestVersion = providerUsageRequestVersion.incrementAndGet()
+        ApplicationManager.getApplication().invokeLater {
+            if (providerUsageRequestVersion.get() == requestVersion && component.isShowing) {
+                providerUsagePopup.showLoading(provider, anchor)
+            }
+        }
+        ApplicationManager.getApplication().executeOnPooledThread {
+            val usage = providerUsageService.load(provider)
+            ApplicationManager.getApplication().invokeLater {
+                if (providerUsageRequestVersion.get() == requestVersion && component.isShowing) {
+                    providerUsagePopup.showUsage(usage, anchor)
+                }
+            }
+        }
+    }
+
+    private fun hideProviderUsage() {
+        providerUsageRequestVersion.incrementAndGet()
+        ApplicationManager.getApplication().invokeLater {
+            providerUsagePopup.hide()
+        }
+    }
+
+    private fun preloadProviderUsage() {
+        providerRegistry.listEnabledProviders()
+            .filter { provider ->
+                provider.id == CLIProvider.CODEX_ID || provider.id == CLIProvider.CLAUDE_CODE_ID
+            }
+            .forEach { provider ->
+                ApplicationManager.getApplication().executeOnPooledThread {
+                    providerUsageService.load(provider)
+                }
+            }
+    }
+
     private fun pushState(forceDiscovery: Boolean = false) {
         val response = actionResponse(forceDiscovery = forceDiscovery)
         val script = "window.AgentDock && window.AgentDock.receive(${quoteJs(response)});"
@@ -234,6 +290,7 @@ class AgentDockPanel(
     }
 
     private fun requestBackgroundRefresh() {
+        preloadProviderUsage()
         if (!refreshInFlight.compareAndSet(false, true)) return
         ApplicationManager.getApplication().executeOnPooledThread {
             try {
@@ -279,6 +336,7 @@ class AgentDockPanel(
         } else {
             autoRefreshTimer.stop()
             hideSessionPreview(immediate = true)
+            hideProviderUsage()
         }
         panelShowing = showing
     }
@@ -496,6 +554,16 @@ class AgentDockPanel(
             top = int("top") ?: return null,
             width = int("width") ?: return null,
             height = int("height") ?: return null
+        )
+    }
+
+    private fun JsonObject.providerUsageAnchor(): ProviderUsageAnchor? {
+        return ProviderUsageAnchor(
+            left = int("left") ?: return null,
+            top = int("top") ?: return null,
+            width = int("width") ?: return null,
+            height = int("height") ?: return null,
+            usePointer = boolean("usePointer") == true
         )
     }
 
