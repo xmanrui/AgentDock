@@ -454,10 +454,11 @@ class AgentDockPanel(
 
     private fun hidePersistentToolWindow() {
         hideSessionPreview(immediate = true)
-        persistentRightToolWindowLayout.hide()
-        if (!toolWindow.isDisposed && toolWindow.isVisible) {
-            toolWindow.hide(TOOL_WINDOW_CALLBACK)
+        if (toolWindow.isDisposed || !toolWindow.isVisible) {
+            persistentRightToolWindowLayout.hide()
+            return
         }
+        toolWindow.hide(Runnable { persistentRightToolWindowLayout.hide() })
     }
 
     private fun hideOtherRightToolWindows() {

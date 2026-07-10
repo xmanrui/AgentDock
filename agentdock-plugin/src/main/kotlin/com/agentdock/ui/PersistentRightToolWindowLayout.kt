@@ -31,6 +31,9 @@ internal class PersistentRightToolWindowLayout(
     private val onHide: () -> Unit,
     private val controlsContainerLocator: (JComponent?) -> Container? = { component ->
         findToolWindowControlsContainer(component)
+    },
+    private val nativeDecoratorLocator: (JComponent?) -> JComponent? = { component ->
+        findNativeDecorator(component)
     }
 ) {
     private val contentHolder = JPanel(BorderLayout())
@@ -57,7 +60,7 @@ internal class PersistentRightToolWindowLayout(
         val originalLayout = root.layout as? BorderLayout ?: return false
         if (originalLayout.getLayoutComponent(root, BorderLayout.CENTER) == null) return false
 
-        nativeDecorator = findNativeDecorator(nativeComponent) ?: nativeDecorator
+        nativeDecorator = nativeDecoratorLocator(nativeComponent) ?: nativeDecorator
         panelWidth = preferredPanelWidth(root, nativeComponent)
         hostPanel.preferredSize = Dimension(panelWidth, 0)
 
@@ -87,8 +90,6 @@ internal class PersistentRightToolWindowLayout(
             root.revalidate()
             root.repaint()
         }
-        nativeDecorator?.isVisible = true
-        nativeDecorator?.parent?.revalidate()
         nativeDecorator = null
         rootContainer = null
         originalRootLayout = null
@@ -195,24 +196,13 @@ internal class PersistentRightToolWindowLayout(
     }
 
     private fun hideNativeDecorator() {
-        val decorator = findNativeDecorator(nativeToolWindowComponent()) ?: nativeDecorator ?: return
+        val decorator = nativeDecoratorLocator(nativeToolWindowComponent()) ?: nativeDecorator ?: return
         nativeDecorator = decorator
         if (decorator.isVisible) {
             decorator.isVisible = false
             decorator.parent?.revalidate()
             decorator.parent?.repaint()
         }
-    }
-
-    private fun findNativeDecorator(start: JComponent?): JComponent? {
-        var current: Container? = start
-        while (current != null) {
-            if (current.javaClass.name == INTERNAL_DECORATOR_CLASS) {
-                return current as? JComponent
-            }
-            current = current.parent
-        }
-        return null
     }
 
     private fun preferredPanelWidth(root: Container, nativeComponent: JComponent?): Int {
@@ -245,6 +235,17 @@ internal class PersistentRightToolWindowLayout(
         private const val HEADER_HEIGHT = 40
         private const val HEADER_HORIZONTAL_PADDING = 12
         private const val HEADER_BUTTON_PADDING = 4
+
+        private fun findNativeDecorator(start: JComponent?): JComponent? {
+            var current: Container? = start
+            while (current != null) {
+                if (current.javaClass.name == INTERNAL_DECORATOR_CLASS) {
+                    return current as? JComponent
+                }
+                current = current.parent
+            }
+            return null
+        }
 
         private fun findToolWindowControlsContainer(start: JComponent?): Container? {
             var current: Container? = start

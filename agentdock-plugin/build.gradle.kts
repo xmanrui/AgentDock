@@ -7,7 +7,7 @@ plugins {
 }
 
 group = "com.agentdock"
-version = "0.1.53"
+version = "0.1.56"
 
 repositories {
     maven("https://maven.aliyun.com/repository/public")
@@ -56,7 +56,7 @@ intellijPlatform {
         """.trimIndent()
 
         changeNotes = """
-            Adds working, ready-for-review, and idle states to AI terminal tab logos.
+            Prevents an empty native AgentDock tool window from remaining after the persistent panel is collapsed.
         """.trimIndent()
     }
 

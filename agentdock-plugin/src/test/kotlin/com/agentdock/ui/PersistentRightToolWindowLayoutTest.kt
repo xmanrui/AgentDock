@@ -19,6 +19,7 @@ class PersistentRightToolWindowLayoutTest {
         val idePane = JPanel()
         val rightToolbar = JPanel().apply { preferredSize = Dimension(48, 0) }
         val content = JPanel()
+        val nativeDecorator = JPanel().apply { isVisible = true }
         val root = JPanel(BorderLayout()).apply {
             size = Dimension(1_200, 800)
             add(idePane, BorderLayout.CENTER)
@@ -29,10 +30,12 @@ class PersistentRightToolWindowLayoutTest {
             content = content,
             nativeToolWindowComponent = { null },
             onHide = {},
-            controlsContainerLocator = { root }
+            controlsContainerLocator = { root },
+            nativeDecoratorLocator = { nativeDecorator }
         )
 
         assertTrue(layout.show())
+        assertFalse(nativeDecorator.isVisible)
         root.doLayout()
 
         val hostPanel = assertNotNull(SwingTestHelpers.directChildOf(content, root)) as JPanel
@@ -103,6 +106,7 @@ class PersistentRightToolWindowLayoutTest {
         assertSame(rightToolbar, (root.layout as BorderLayout).getLayoutComponent(root, BorderLayout.EAST))
         assertEquals(idePane.x + idePane.width, rightToolbar.x)
         assertFalse(layout.isShowing)
+        assertFalse(nativeDecorator.isVisible)
     }
 
     @Test
