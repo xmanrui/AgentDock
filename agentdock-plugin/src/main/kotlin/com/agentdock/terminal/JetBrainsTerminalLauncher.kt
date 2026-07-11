@@ -31,18 +31,25 @@ class JetBrainsTerminalLauncher(private val project: Project) : TerminalLauncher
                 val controllerRef = AtomicReference(
                     createPresentationController(initialContent, presentation.providerId, fullTitle)
                 )
+                val widget = ShellTerminalWidget.toShellJediTermWidgetOrThrow(terminalWidget)
                 val monitor = presentation.activitySource?.let { source ->
                     LocalTerminalActivityMonitor(
                         source = source,
                         onEvent = { event -> controllerRef.get()?.onActivity(event) }
                     )
                 }
+                val outputMonitor = TerminalStreamOutputMonitor(
+                    textBuffer = widget.terminalTextBuffer,
+                    isWorking = { controllerRef.get()?.isWorking() == true },
+                    onText = { text -> controllerRef.get()?.onStreamText(text) }
+                )
                 monitor?.start()
-                val widget = ShellTerminalWidget.toShellJediTermWidgetOrThrow(terminalWidget)
+                outputMonitor.start()
                 try {
                     widget.executeCommand(command)
                 } catch (error: Throwable) {
                     monitor?.stop()
+                    outputMonitor.stop()
                     controllerRef.get()?.dispose()
                     throw error
                 }
@@ -53,11 +60,13 @@ class JetBrainsTerminalLauncher(private val project: Project) : TerminalLauncher
                 if (content != null) {
                     registerContentClosedListener(content) {
                         monitor?.stop()
+                        outputMonitor.stop()
                         finalController?.dispose()
                         presentation.onClosed?.invoke()
                     }
                 } else {
                     monitor?.stop()
+                    outputMonitor.stop()
                     finalController?.dispose()
                 }
             }

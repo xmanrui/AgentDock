@@ -27,8 +27,10 @@ internal class TerminalTaskPresentationController(
     baseIcon: Icon,
     private val fullTitle: String
 ) {
+    @Volatile
     private var state = TerminalTaskState.Idle
     private val statusIcon = TerminalTaskStatusIcon(baseIcon) { repaintTab() }
+    private val streamOverlay = TerminalStreamOverlayController(content) { statusIcon.lastPaintComponent }
     private val viewedTimer = Timer(VIEWED_DELAY_MS) {
         if (state == TerminalTaskState.Ready && isViewed()) {
             transition(TerminalTaskEvent.Viewed)
@@ -76,9 +78,18 @@ internal class TerminalTaskPresentationController(
         )
     }
 
+    fun isWorking(): Boolean = state == TerminalTaskState.Working
+
+    fun onStreamText(text: String) {
+        if (isWorking()) {
+            streamOverlay.show(text)
+        }
+    }
+
     fun dispose() {
         viewedTimer.stop()
         statusIcon.dispose()
+        streamOverlay.dispose()
         content.manager?.removeContentManagerListener(selectionListener)
         KeyboardFocusManager.getCurrentKeyboardFocusManager()
             .removePropertyChangeListener("focusOwner", focusListener)
@@ -91,6 +102,9 @@ internal class TerminalTaskPresentationController(
         state = nextState
         if (state != TerminalTaskState.Ready) {
             viewedTimer.stop()
+        }
+        if (state != TerminalTaskState.Working) {
+            streamOverlay.hide()
         }
         applyPresentation()
         if (state == TerminalTaskState.Ready) {
