@@ -6,6 +6,8 @@
 目标平台: PyCharm, IntelliJ IDEA, WebStorm, PhpStorm 等 JetBrains IDE 家族  
 产品形态建议: JetBrains IDE 插件, 右侧 Tool Window Bar 入口
 
+> 实现状态更新（v1.1）: 当前插件已内置 Codex CLI、Claude Code CLI 和 Gemini CLI。下文的 v0.1 MVP Provider 范围保留为最初的产品基线。
+
 ## 1. 背景
 
 开发者正在同时使用多个 AI CLI 工具完成真实代码任务, 例如 Codex CLI, Claude Code CLI, Gemini CLI, OpenCode, Junie 等。它们各自有自己的会话、恢复命令和历史记录, 但在 IDE 内部通常只是表现为一个普通终端标签页。

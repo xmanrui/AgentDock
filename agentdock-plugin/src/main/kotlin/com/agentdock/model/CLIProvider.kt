@@ -14,6 +14,7 @@ data class CLIProvider(
     companion object {
         const val CODEX_ID = "codex"
         const val CLAUDE_CODE_ID = "claude-code"
+        const val GEMINI_ID = "gemini"
 
         fun defaultProviders(): List<CLIProvider> = listOf(
             CLIProvider(
@@ -36,6 +37,17 @@ data class CLIProvider(
                 resumeCommandTemplate = "{{executable}} --resume {{providerSessionId?}} --ide",
                 supportsSessionId = true,
                 supportsImport = false,
+                enabled = true
+            ),
+            CLIProvider(
+                id = GEMINI_ID,
+                displayName = "Gemini CLI",
+                executable = "gemini",
+                detectCommand = "gemini --version",
+                startCommandTemplate = "{{executable}}",
+                resumeCommandTemplate = "{{executable}} --resume {{providerSessionId?}}",
+                supportsSessionId = true,
+                supportsImport = true,
                 enabled = true
             )
         )

@@ -12,7 +12,8 @@ class AgentDockHtmlRendererTest {
                 count = 1,
                 providers = listOf(
                     AgentDockHtmlRenderer.ProviderItem("codex", "Codex"),
-                    AgentDockHtmlRenderer.ProviderItem("claude-code", "Claude Code")
+                    AgentDockHtmlRenderer.ProviderItem("claude-code", "Claude Code"),
+                    AgentDockHtmlRenderer.ProviderItem("gemini", "Gemini CLI")
                 ),
                 sessions = listOf(
                     AgentDockHtmlRenderer.SessionItem(
@@ -69,6 +70,8 @@ class AgentDockHtmlRendererTest {
         assertContains(html, "All AI providers")
         assertContains(html, "\"id\":\"codex\"")
         assertContains(html, "\"id\":\"claude-code\"")
+        assertContains(html, "\"id\":\"gemini\"")
+        assertContains(html, "providerId === \"gemini\"")
         assertContains(html, "Search sessions")
         assertContains(html, "--content-horizontal-padding: 10px")
         assertContains(html, "padding: 8px var(--content-horizontal-padding)")

@@ -159,11 +159,13 @@ class JetBrainsTerminalLauncher(private val project: Project) : TerminalLauncher
     private object ProviderIcons {
         private val codex: Icon = IconLoader.getIcon("/icons/codex.svg", ProviderIcons::class.java)
         private val claude: Icon = IconLoader.getIcon("/icons/claude.svg", ProviderIcons::class.java)
+        private val gemini: Icon = IconLoader.getIcon("/icons/gemini.svg", ProviderIcons::class.java)
 
         fun forProvider(providerId: String?): Icon? {
             return when (providerId) {
                 CLIProvider.CODEX_ID -> codex
                 CLIProvider.CLAUDE_CODE_ID -> claude
+                CLIProvider.GEMINI_ID -> gemini
                 else -> null
             }
         }

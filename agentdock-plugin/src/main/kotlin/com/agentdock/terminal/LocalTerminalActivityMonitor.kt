@@ -1,5 +1,8 @@
 package com.agentdock.terminal
 
+import com.agentdock.model.CLIProvider
+import com.google.gson.JsonObject
+import com.google.gson.JsonParser
 import com.intellij.openapi.application.ApplicationManager
 import com.intellij.util.concurrency.AppExecutorUtil
 import java.io.File
@@ -20,11 +23,19 @@ internal class LocalTerminalActivityMonitor(
     private val stopped = AtomicBoolean(false)
     private val historyFile = File(source.historyFilePath)
     private var offset = 0L
+    private var geminiMessageCount = 0
+    private var geminiLastModified = 0L
+    private var geminiFileLength = 0L
     private var future: ScheduledFuture<*>? = null
 
     fun start() {
         if (future != null || source.historyFilePath.isBlank()) return
         offset = historyFile.takeIf { it.isFile }?.length() ?: 0L
+        if (source.providerId == CLIProvider.GEMINI_ID) {
+            geminiMessageCount = readGeminiMessages()?.size() ?: 0
+            geminiLastModified = historyFile.lastModified()
+            geminiFileLength = historyFile.length()
+        }
         future = AppExecutorUtil.getAppScheduledExecutorService().scheduleWithFixedDelay(
             { poll() },
             POLL_INTERVAL_MS,
@@ -41,7 +52,50 @@ internal class LocalTerminalActivityMonitor(
 
     private fun poll() {
         if (stopped.get() || !historyFile.isFile) return
-        runCatching { readAppendedLines() }
+        runCatching {
+            if (source.providerId == CLIProvider.GEMINI_ID) {
+                readGeminiActivity()
+            } else {
+                readAppendedLines()
+            }
+        }
+    }
+
+    private fun readGeminiActivity() {
+        val lastModified = historyFile.lastModified()
+        val fileLength = historyFile.length()
+        if (lastModified == geminiLastModified && fileLength == geminiFileLength) return
+
+        val messages = readGeminiMessages() ?: return
+        if (messages.size() < geminiMessageCount) {
+            geminiMessageCount = 0
+        }
+        for (index in geminiMessageCount until messages.size()) {
+            val message = messages[index].takeIf { it.isJsonObject }?.asJsonObject ?: continue
+            when (message.string("type")) {
+                "user" -> dispatch(TerminalActivityEvent.Started)
+                "gemini" -> dispatch(TerminalActivityEvent.Completed)
+            }
+        }
+        geminiMessageCount = messages.size()
+        geminiLastModified = lastModified
+        geminiFileLength = fileLength
+    }
+
+    private fun readGeminiMessages() = try {
+        historyFile.reader().use { reader ->
+            JsonParser.parseReader(reader)
+                .takeIf { it.isJsonObject }
+                ?.asJsonObject
+                ?.let { json -> json.get("messages")?.takeIf { it.isJsonArray }?.asJsonArray }
+        }
+    } catch (_: Exception) {
+        null
+    }
+
+    private fun JsonObject.string(name: String): String? {
+        val value = get(name) ?: return null
+        return if (value.isJsonPrimitive && value.asJsonPrimitive.isString) value.asString else null
     }
 
     private fun readAppendedLines() {

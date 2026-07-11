@@ -5,6 +5,8 @@
 状态: 实施方案草案  
 依据文档: `AgentDock-PRD.md`, `TECH-STACK.md`, `agentdock-prototype.html`  
 
+> 实现状态更新（v1.1）: Gemini CLI 已作为第三个内置 Provider 接入；下文 v0.1 范围和“不做项”保留为历史实施基线。
+
 ## 1. 结论
 
 AgentDock 第一版应落地为一个 Kotlin 原生 JetBrains IDE 插件, 以右侧 Tool Window 的形式提供项目级 AI CLI 会话管理。
@@ -894,4 +896,3 @@ v0.1 完成必须满足:
 3. 实现 `AgentSession` / `CLIProvider` / `PersistentStateComponent`。
 4. 实现 Codex 和 Claude Code provider settings。
 5. 在 macOS + PyCharm 下打通 New Session 到 Terminal fallback 的最短闭环。
-

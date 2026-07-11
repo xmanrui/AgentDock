@@ -4,7 +4,11 @@ import com.agentdock.model.CLIProvider
 import com.agentdock.util.SessionTextSanitizer
 
 object StateMigration {
-    private val supportedProviderIds = setOf(CLIProvider.CODEX_ID, CLIProvider.CLAUDE_CODE_ID)
+    private val supportedProviderIds = setOf(
+        CLIProvider.CODEX_ID,
+        CLIProvider.CLAUDE_CODE_ID,
+        CLIProvider.GEMINI_ID
+    )
     private val legacyTemplates = mapOf(
         CLIProvider.CODEX_ID to LegacyTemplates(
             start = "codex",
@@ -66,6 +70,7 @@ object StateMigration {
         val providerName = when (providerId) {
             CLIProvider.CODEX_ID -> "Codex"
             CLIProvider.CLAUDE_CODE_ID -> "Claude Code"
+            CLIProvider.GEMINI_ID -> "Gemini CLI"
             else -> "Agent"
         }
         return if (suffix == null) "$providerName session" else "$providerName session $suffix"

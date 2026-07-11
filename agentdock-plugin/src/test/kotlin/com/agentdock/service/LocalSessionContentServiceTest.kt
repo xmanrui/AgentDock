@@ -83,6 +83,37 @@ class LocalSessionContentServiceTest {
     }
 
     @Test
+    fun `loads Gemini CLI user and model messages`() = withHome { home ->
+        val sessionId = "b77d543d-709c-40ba-b8da-7bb5b0f6767b"
+        val projectPath = "/tmp/gemini-project"
+        val source = File(home, "gemini-session.json")
+        source.writeText(
+            """
+            {
+              "sessionId":"$sessionId",
+              "messages":[
+                {"type":"info","content":"metadata"},
+                {"type":"user","content":"Explain this module."},
+                {"type":"gemini","content":"It manages project-scoped CLI sessions."},
+                {"type":"error","content":"transient error"}
+              ]
+            }
+            """.trimIndent()
+        )
+
+        val preview = LocalSessionContentService(home).load(
+            session(CLIProvider.GEMINI_ID, sessionId, projectPath).copy(historyFilePath = source.absolutePath)
+        )
+
+        assertEquals(
+            listOf("Explain this module.", "It manages project-scoped CLI sessions."),
+            preview.messages.map { it.text }
+        )
+        assertEquals(listOf(SessionContentRole.User, SessionContentRole.Assistant), preview.messages.map { it.role })
+        assertNull(preview.notice)
+    }
+
+    @Test
     fun `falls back to the stored summary when a history file is unavailable`() = withHome { home ->
         val preview = LocalSessionContentService(home).load(
             session(CLIProvider.CODEX_ID, "missing").copy(summary = "Fallback session purpose.")

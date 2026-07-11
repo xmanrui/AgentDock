@@ -166,6 +166,31 @@ class LocalSessionTokenUsageServiceTest {
     }
 
     @Test
+    fun `computes Gemini token and response metrics`() = withHome { home ->
+        val source = File(home, "gemini.json")
+        source.writeText(
+            """
+            {
+              "sessionId":"gemini-session",
+              "messages":[
+                {"type":"user","timestamp":"2026-07-10T10:00:00Z","content":"First prompt"},
+                {"type":"gemini","timestamp":"2026-07-10T10:00:02Z","content":"First response","tokens":{"input":10,"output":20,"total":30}},
+                {"type":"user","timestamp":"2026-07-10T11:00:00Z","content":"Second prompt"},
+                {"type":"gemini","timestamp":"2026-07-10T11:00:04Z","content":"Second response","tokens":{"input":15,"output":25,"total":40}}
+              ]
+            }
+            """.trimIndent()
+        )
+
+        val usage = LocalSessionTokenUsageService(LocalSessionContentService(home), clock)
+            .load(session(CLIProvider.GEMINI_ID, source))
+
+        assertEquals(70L, usage.totalTokens)
+        assertEquals(70L, usage.dailyTokens[5])
+        assertEquals(listOf(null, null, null, null, null, 3_000L, null), usage.dailyAverageResponseMillis)
+    }
+
+    @Test
     fun `returns unavailable usage when no local history exists`() = withHome { home ->
         val session = AgentSession(
             id = "codex:missing",

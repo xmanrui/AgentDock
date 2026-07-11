@@ -7,9 +7,9 @@ import kotlin.test.assertTrue
 
 class CLIProviderDefaultsTest {
     @Test
-    fun `mvp defaults only include codex and claude code`() {
+    fun `defaults include codex claude code and gemini cli`() {
         assertEquals(
-            listOf(CLIProvider.CODEX_ID, CLIProvider.CLAUDE_CODE_ID),
+            listOf(CLIProvider.CODEX_ID, CLIProvider.CLAUDE_CODE_ID, CLIProvider.GEMINI_ID),
             CLIProvider.defaultProviders().map { it.id }
         )
     }

@@ -149,6 +149,7 @@ class SessionCardPanel(
         return when (session.providerId) {
             CLIProvider.CODEX_ID -> "Codex"
             CLIProvider.CLAUDE_CODE_ID -> "Claude"
+            CLIProvider.GEMINI_ID -> "Gemini"
             else -> providerName
         }
     }
@@ -157,6 +158,7 @@ class SessionCardPanel(
         return when (providerId) {
             CLIProvider.CODEX_ID -> JBColor(0x0B8043, 0x8FD19E)
             CLIProvider.CLAUDE_CODE_ID -> JBColor(0xA14200, 0xDFA878)
+            CLIProvider.GEMINI_ID -> JBColor(0x185ABC, 0x9BBEFF)
             else -> JBColor(0x3C4043, 0xC9CCD1)
         }
     }
@@ -165,6 +167,7 @@ class SessionCardPanel(
         return when (providerId) {
             CLIProvider.CODEX_ID -> JBColor(0xE6F4EA, 0x24382B)
             CLIProvider.CLAUDE_CODE_ID -> JBColor(0xFCE8D5, 0x4A3324)
+            CLIProvider.GEMINI_ID -> JBColor(0xE8F0FE, 0x26364F)
             else -> JBColor(0xF1F3F4, 0x343638)
         }
     }

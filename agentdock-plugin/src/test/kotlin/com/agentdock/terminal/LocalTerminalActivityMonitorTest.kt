@@ -42,4 +42,36 @@ class LocalTerminalActivityMonitorTest {
             history.delete()
         }
     }
+
+    @Test
+    fun `emits lifecycle events added to a Gemini session file`() {
+        val history = Files.createTempFile("agentdock-gemini-activity", ".json").toFile()
+        history.writeText("""{"sessionId":"test","messages":[{"type":"user","content":"existing"}]}""")
+        val events = Collections.synchronizedList(mutableListOf<TerminalActivityEvent>())
+        val latch = CountDownLatch(2)
+        val monitor = LocalTerminalActivityMonitor(
+            source = TerminalActivitySource(CLIProvider.GEMINI_ID, history.absolutePath),
+            onEvent = { event ->
+                events.add(event)
+                latch.countDown()
+            },
+            dispatch = { action -> action() }
+        )
+
+        try {
+            monitor.start()
+            history.writeText(
+                """{"sessionId":"test","messages":[{"type":"user","content":"existing"},{"type":"user","content":"new prompt"},{"type":"gemini","content":"new response"}]}"""
+            )
+
+            assertTrue(latch.await(3, TimeUnit.SECONDS))
+            assertEquals(
+                listOf(TerminalActivityEvent.Started, TerminalActivityEvent.Completed),
+                events.toList()
+            )
+        } finally {
+            monitor.stop()
+            history.delete()
+        }
+    }
 }

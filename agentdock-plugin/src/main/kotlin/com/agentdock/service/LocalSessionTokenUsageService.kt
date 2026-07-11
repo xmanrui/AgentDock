@@ -81,6 +81,7 @@ class LocalSessionTokenUsageService(
             when (session.providerId) {
                 CLIProvider.CODEX_ID -> parseCodex(source, anchorDate)
                 CLIProvider.CLAUDE_CODE_ID -> parseClaudeCode(source, anchorDate)
+                CLIProvider.GEMINI_ID -> parseGemini(source, anchorDate)
                 else -> unavailableUsage()
             }
         }.getOrElse { unavailableUsage() }
@@ -191,6 +192,39 @@ class LocalSessionTokenUsageService(
         return buildUsage(foundUsage, totalTokens, dailyTotals, responseTimes, anchorDate)
     }
 
+    private fun parseGemini(source: File, anchorDate: LocalDate): SessionTokenUsage {
+        val json = parseFileObject(source) ?: return unavailableUsage()
+        val dailyTotals = mutableMapOf<LocalDate, Long>()
+        val responseTimes = DailyResponseTimeAccumulator(clock)
+        val fallbackDate = sourceDate(source, anchorDate)
+        var totalTokens = 0L
+        var foundUsage = false
+        var pendingUserAt: Instant? = null
+
+        json.array("messages")?.forEach { element ->
+            val message = element.takeIf { it.isJsonObject }?.asJsonObject ?: return@forEach
+            val timestamp = message.string("timestamp")?.toInstantOrNull()
+            when (message.string("type")) {
+                "user" -> pendingUserAt = timestamp
+                "gemini" -> {
+                    message.obj("tokens")?.nonNegativeLong("total")?.let { tokens ->
+                        foundUsage = true
+                        totalTokens = totalTokens.safePlus(tokens)
+                        val date = timestamp?.atZone(clock.zone)?.toLocalDate() ?: fallbackDate
+                        dailyTotals[date] = dailyTotals.getOrDefault(date, 0L).safePlus(tokens)
+                    }
+                    val startedAt = pendingUserAt
+                    if (startedAt != null && timestamp != null && !timestamp.isBefore(startedAt)) {
+                        responseTimes.record(timestamp.toEpochMilli() - startedAt.toEpochMilli(), timestamp)
+                    }
+                    pendingUserAt = null
+                }
+            }
+        }
+
+        return buildUsage(foundUsage, totalTokens, dailyTotals, responseTimes, anchorDate)
+    }
+
     private fun buildUsage(
         foundUsage: Boolean,
         totalTokens: Long,
@@ -264,10 +298,22 @@ class LocalSessionTokenUsageService(
         }
     }
 
+    private fun parseFileObject(file: File): JsonObject? {
+        return try {
+            file.reader().use { reader ->
+                JsonParser.parseReader(reader).takeIf { it.isJsonObject }?.asJsonObject
+            }
+        } catch (_: Exception) {
+            null
+        }
+    }
+
     private fun JsonObject.obj(name: String): JsonObject? {
         val value = get(name) ?: return null
         return if (value.isJsonObject) value.asJsonObject else null
     }
+
+    private fun JsonObject.array(name: String) = get(name)?.takeIf { it.isJsonArray }?.asJsonArray
 
     private fun JsonObject.string(name: String): String? {
         val value = get(name) ?: return null

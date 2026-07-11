@@ -12,6 +12,7 @@ AgentDock may access the following data on your device to provide its features:
 - AgentDock provider settings and project-scoped session metadata;
 - local Codex session files under `~/.codex`, including session indexes and session content used for discovery and previews;
 - local Claude Code session files under `~/.claude/projects`, including session content used for discovery and previews;
+- local Gemini CLI session files under `~/.gemini/tmp`, including project-scoped session content used for discovery, previews, and local usage metrics;
 - configured provider executable paths and executable version information;
 - provider account usage information, such as rate-limit utilization and reset times.
 
@@ -32,7 +33,7 @@ AgentDock does not operate an AgentDock server and does not upload data to an Ag
 Network activity may still occur in these cases:
 
 - AgentDock requests Claude Code usage information from the configured Anthropic-compatible endpoint, which defaults to `https://api.anthropic.com/api/oauth/usage`.
-- The locally installed Codex or Claude Code CLI may connect to its provider when AgentDock launches start or resume commands.
+- The locally installed Codex, Claude Code, or Gemini CLI may connect to its provider when AgentDock launches start or resume commands.
 - The Codex CLI may connect to OpenAI services while responding to an account usage request.
 
 Those third-party services process data under their own terms and privacy policies.
@@ -48,7 +49,7 @@ AgentDock does not collect analytics, advertising identifiers, crash reports, or
 - Provider usage responses are cached in memory for a short period and are not persisted by AgentDock.
 - Complete Terminal output is not stored by AgentDock.
 
-Local settings remain until you reset or remove them, remove the relevant IDE configuration, or uninstall the plugin. Session data owned by Codex CLI or Claude Code CLI remains governed by those tools and is not deleted when AgentDock is uninstalled.
+Local settings remain until you reset or remove them, remove the relevant IDE configuration, or uninstall the plugin. Session data owned by Codex CLI, Claude Code CLI, or Gemini CLI remains governed by those tools and is not deleted when AgentDock is uninstalled.
 
 ## Your Choices
 

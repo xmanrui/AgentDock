@@ -9,6 +9,7 @@ import com.google.gson.JsonElement
 import com.google.gson.JsonObject
 import com.google.gson.JsonParser
 import java.io.File
+import java.security.MessageDigest
 import java.time.Instant
 
 class LocalSessionDiscoveryService(
@@ -21,6 +22,7 @@ class LocalSessionDiscoveryService(
         return buildList {
             addAll(discoverCodex(projectDir))
             addAll(discoverClaudeCode(projectDir))
+            addAll(discoverGemini(projectDir))
         }.sortedByDescending { it.updatedAt }
     }
 
@@ -176,9 +178,62 @@ class LocalSessionDiscoveryService(
         )
     }
 
+    private fun discoverGemini(projectDir: File): List<AgentSession> {
+        val projectHash = sha256(projectDir.absolutePath)
+        val chatsDir = File(userHome, ".gemini/tmp/$projectHash/chats")
+        if (!chatsDir.isDirectory) return emptyList()
+
+        return chatsDir.listFiles { file ->
+            file.isFile && file.extension == "json" && file.name.startsWith("session-")
+        }.orEmpty().mapNotNull { file -> parseGeminiSession(file, projectDir, projectHash) }
+    }
+
+    private fun parseGeminiSession(file: File, projectDir: File, projectHash: String): AgentSession? {
+        val json = parseFileObject(file) ?: return null
+        if (json.string("projectHash")?.takeIf { it.isNotBlank() } != projectHash) return null
+        val providerSessionId = json.string("sessionId")?.takeIf { it.isNotBlank() } ?: return null
+        val messages = json.array("messages")
+        val firstUserMessage = messages?.asSequence()
+            ?.mapNotNull { element -> element.takeIf { it.isJsonObject }?.asJsonObject }
+            ?.firstOrNull { it.string("type") == "user" }
+            ?.string("content")
+            ?.takeIf { SessionTextSanitizer.summary(it).isNotBlank() }
+        val storedSummary = json.string("summary")?.takeIf { SessionTextSanitizer.summary(it).isNotBlank() }
+        val createdAt = json.string("startTime")?.toMillis() ?: file.lastModified()
+        val updatedAt = json.string("lastUpdated")?.toMillis() ?: file.lastModified()
+        val titleSource = firstUserMessage ?: storedSummary
+        val title = titleSource?.toTitle(providerSessionId) ?: "Gemini CLI session ${providerSessionId.take(8)}"
+
+        return AgentSession(
+            id = "${CLIProvider.GEMINI_ID}:$providerSessionId",
+            projectId = ProjectIdentity.idFor(projectDir.absolutePath),
+            projectPath = projectDir.absolutePath,
+            name = title,
+            providerId = CLIProvider.GEMINI_ID,
+            status = AgentSessionStatus.Restorable,
+            cwd = projectDir.absolutePath,
+            providerSessionId = providerSessionId,
+            historyFilePath = file.absolutePath,
+            summary = SessionTextSanitizer.summary(firstUserMessage ?: storedSummary),
+            linkedFiles = mutableListOf("."),
+            createdAt = createdAt,
+            updatedAt = updatedAt
+        )
+    }
+
     private fun parseObject(line: String): JsonObject? {
         return try {
             JsonParser.parseString(line).asJsonObject
+        } catch (_: Exception) {
+            null
+        }
+    }
+
+    private fun parseFileObject(file: File): JsonObject? {
+        return try {
+            file.reader().use { reader ->
+                JsonParser.parseReader(reader).takeIf { it.isJsonObject }?.asJsonObject
+            }
         } catch (_: Exception) {
             null
         }
@@ -188,6 +243,8 @@ class LocalSessionDiscoveryService(
         val value = get(name) ?: return null
         return if (value.isJsonObject) value.asJsonObject else null
     }
+
+    private fun JsonObject.array(name: String) = get(name)?.takeIf { it.isJsonArray }?.asJsonArray
 
     private fun JsonObject.string(name: String): String? {
         val value = get(name) ?: return null
@@ -243,6 +300,12 @@ class LocalSessionDiscoveryService(
     private fun linkedProjectPath(projectDir: File, cwd: File): MutableList<String> {
         val relative = projectDir.toPath().relativize(cwd.toPath()).toString()
         return mutableListOf(if (relative.isBlank()) "." else relative)
+    }
+
+    private fun sha256(value: String): String {
+        return MessageDigest.getInstance("SHA-256")
+            .digest(value.toByteArray(Charsets.UTF_8))
+            .joinToString("") { byte -> "%02x".format(byte) }
     }
 
     private data class CodexIndexEntry(

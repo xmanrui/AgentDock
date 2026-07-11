@@ -7,7 +7,7 @@ plugins {
 }
 
 group = "com.agentdock"
-version = "1.0.0"
+version = "1.1.0"
 
 repositories {
     maven("https://maven.aliyun.com/repository/public")
@@ -57,7 +57,7 @@ intellijPlatform {
 
         description = """
             <p>Manage project-scoped AI CLI sessions without leaving your JetBrains IDE.</p>
-            <p>AgentDock brings local Codex CLI and Claude Code CLI sessions into a dedicated tool window where you can:</p>
+            <p>AgentDock brings local Codex CLI, Claude Code CLI, and Gemini CLI sessions into a dedicated tool window where you can:</p>
             <ul>
                 <li>discover sessions associated with the current project;</li>
                 <li>create, resume, search, rename, pin, and archive sessions;</li>
@@ -65,20 +65,20 @@ intellijPlatform {
                 <li>view provider usage limits when supported by the local account configuration.</li>
             </ul>
             <p>AgentDock is local-first, does not operate a cloud service, and does not collect analytics or telemetry.</p>
-            <p><b>Requirements:</b> JetBrains IDE 2025.2 or later and a locally installed Codex CLI or Claude Code CLI for the corresponding provider.</p>
+            <p><b>Requirements:</b> JetBrains IDE 2025.2 or later and the locally installed CLI for each provider you use.</p>
             <p>
                 <a href="https://github.com/xmanrui/AgentDock">Source code and documentation</a>
                 ·
                 <a href="https://github.com/xmanrui/AgentDock/blob/main/PRIVACY.md">Privacy Policy</a>
             </p>
-            <p>AgentDock is an independent open-source project and is not affiliated with, endorsed by, or sponsored by OpenAI, Anthropic, or JetBrains.</p>
+            <p>AgentDock is an independent open-source project and is not affiliated with, endorsed by, or sponsored by Google, OpenAI, Anthropic, or JetBrains.</p>
         """.trimIndent()
 
         changeNotes = """
             <ul>
-                <li>Adds local per-session token usage totals, seven-day trends, and average response-time metrics.</li>
-                <li>Improves session previews with a clearer conversation-style layout.</li>
-                <li>Refines provider usage popups and right-side panel alignment.</li>
+                <li>Adds built-in Gemini CLI support for creating and resuming sessions.</li>
+                <li>Discovers project-scoped Gemini CLI history and displays local conversation previews.</li>
+                <li>Includes Gemini session token trends and average response-time metrics.</li>
             </ul>
         """.trimIndent()
     }

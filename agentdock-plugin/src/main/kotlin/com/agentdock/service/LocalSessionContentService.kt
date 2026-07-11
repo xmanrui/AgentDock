@@ -7,6 +7,7 @@ import com.google.gson.JsonElement
 import com.google.gson.JsonObject
 import com.google.gson.JsonParser
 import java.io.File
+import java.security.MessageDigest
 import java.util.ArrayDeque
 import java.util.concurrent.ConcurrentHashMap
 
@@ -78,6 +79,7 @@ class LocalSessionContentService(
         val source = when (session.providerId) {
             CLIProvider.CODEX_ID -> findCodexSource(providerSessionId)
             CLIProvider.CLAUDE_CODE_ID -> findClaudeCodeSource(session, providerSessionId)
+            CLIProvider.GEMINI_ID -> findGeminiSource(session, providerSessionId)
             else -> null
         }
         if (source != null) {
@@ -134,7 +136,22 @@ class LocalSessionContentService(
             .firstOrNull { it.isFile }
     }
 
+    private fun findGeminiSource(session: AgentSession, providerSessionId: String): File? {
+        val projectPath = session.projectPath.takeIf { it.isNotBlank() } ?: return null
+        val projectHash = sha256(File(projectPath).absolutePath)
+        val chatsDir = File(userHome, ".gemini/tmp/$projectHash/chats")
+        if (!chatsDir.isDirectory) return null
+        return chatsDir.listFiles { file ->
+            file.isFile && file.extension == "json" && file.name.startsWith("session-")
+        }.orEmpty().firstOrNull { file ->
+            parseFileObject(file)?.string("sessionId") == providerSessionId
+        }
+    }
+
     private fun parseSource(source: File, providerId: String): SessionContentPreview {
+        if (providerId == CLIProvider.GEMINI_ID) {
+            return parseGeminiSource(source)
+        }
         val retained = RetainedMessages()
         source.useLines { lines ->
             lines.forEach { line ->
@@ -148,6 +165,24 @@ class LocalSessionContentService(
                     retained.add(message)
                 }
             }
+        }
+        return retained.toPreview()
+    }
+
+    private fun parseGeminiSource(source: File): SessionContentPreview {
+        val json = parseFileObject(source) ?: return SessionContentPreview(
+            messages = emptyList(),
+            notice = "The local Gemini CLI conversation could not be read."
+        )
+        val retained = RetainedMessages()
+        json.array("messages")?.forEach { element ->
+            val message = element.takeIf { it.isJsonObject }?.asJsonObject ?: return@forEach
+            val role = when (message.string("type")) {
+                "user" -> SessionContentRole.User
+                "gemini" -> SessionContentRole.Assistant
+                else -> null
+            } ?: return@forEach
+            createMessage(role, message.string("content"))?.let(retained::add)
         }
         return retained.toPreview()
     }
@@ -237,10 +272,22 @@ class LocalSessionContentService(
         }
     }
 
+    private fun parseFileObject(file: File): JsonObject? {
+        return try {
+            file.reader().use { reader ->
+                JsonParser.parseReader(reader).takeIf { it.isJsonObject }?.asJsonObject
+            }
+        } catch (_: Exception) {
+            null
+        }
+    }
+
     private fun JsonObject.obj(name: String): JsonObject? {
         val value = get(name) ?: return null
         return if (value.isJsonObject) value.asJsonObject else null
     }
+
+    private fun JsonObject.array(name: String) = get(name)?.takeIf { it.isJsonArray }?.asJsonArray
 
     private fun JsonObject.string(name: String): String? {
         val value = get(name) ?: return null
@@ -267,6 +314,12 @@ class LocalSessionContentService(
 
     private fun String.appendTruncation(original: String): String {
         return if (length < original.trimEnd().length) "$this..." else this
+    }
+
+    private fun sha256(value: String): String {
+        return MessageDigest.getInstance("SHA-256")
+            .digest(value.toByteArray(Charsets.UTF_8))
+            .joinToString("") { byte -> "%02x".format(byte) }
     }
 
     private class RetainedMessages {

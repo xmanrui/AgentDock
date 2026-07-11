@@ -7,6 +7,7 @@ import kotlin.test.assertEquals
 import kotlin.test.assertFalse
 import kotlin.test.assertTrue
 import java.io.File
+import java.security.MessageDigest
 
 class LocalSessionDiscoveryServiceTest {
     @Test
@@ -149,6 +150,36 @@ class LocalSessionDiscoveryServiceTest {
         assertFalse(session.summary.contains("shell", ignoreCase = true))
     }
 
+    @Test
+    fun `discovers project scoped gemini cli sessions`() {
+        val fixture = Fixture()
+        val sessionId = "b77d543d-709c-40ba-b8da-7bb5b0f6767b"
+        fixture.writeGeminiSession(
+            sessionId,
+            """
+            {
+              "sessionId":"$sessionId",
+              "projectHash":"${fixture.projectHash()}",
+              "startTime":"2026-07-11T15:13:05Z",
+              "lastUpdated":"2026-07-11T15:14:48Z",
+              "messages":[
+                {"id":"user-1","timestamp":"2026-07-11T15:13:10Z","type":"user","content":"Add Gemini CLI support."},
+                {"id":"model-1","timestamp":"2026-07-11T15:13:12Z","type":"gemini","content":"I will inspect the provider architecture."}
+              ]
+            }
+            """.trimIndent()
+        )
+
+        val session = fixture.discovery().discover(fixture.project.path).single()
+
+        assertEquals("${CLIProvider.GEMINI_ID}:$sessionId", session.id)
+        assertEquals(CLIProvider.GEMINI_ID, session.providerId)
+        assertEquals("Add Gemini CLI support.", session.name)
+        assertEquals("Add Gemini CLI support.", session.summary)
+        assertEquals(fixture.project.path, session.cwd)
+        assertTrue(File(session.historyFilePath).isFile)
+    }
+
     private class Fixture {
         val root: File = createTempDirectory("agentdock-discovery").toFile()
         val userHome: File = File(root, "home").apply { mkdirs() }
@@ -173,5 +204,15 @@ class LocalSessionDiscoveryServiceTest {
             file.parentFile.mkdirs()
             file.writeText(content.trim() + "\n")
         }
+
+        fun writeGeminiSession(sessionId: String, content: String) {
+            val file = File(userHome, ".gemini/tmp/${projectHash()}/chats/session-test-${sessionId.take(8)}.json")
+            file.parentFile.mkdirs()
+            file.writeText(content.trim() + "\n")
+        }
+
+        fun projectHash(): String = MessageDigest.getInstance("SHA-256")
+            .digest(project.absolutePath.toByteArray(Charsets.UTF_8))
+            .joinToString("") { byte -> "%02x".format(byte) }
     }
 }
