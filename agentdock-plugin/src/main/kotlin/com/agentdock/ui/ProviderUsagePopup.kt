@@ -100,9 +100,9 @@ internal class ProviderUsagePopup(
         val window = JWindow(owner).apply {
             type = Window.Type.POPUP
             focusableWindowState = false
-            runCatching { background = Color(0, 0, 0, 0) }
             contentPane = content
             pack()
+            RoundedPopupWindowSupport.configure(this, JBUI.scale(CORNER_RADIUS))
             location = popupLocation(anchorBounds, size, usableScreenBounds())
         }
 

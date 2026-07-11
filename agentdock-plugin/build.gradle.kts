@@ -7,7 +7,7 @@ plugins {
 }
 
 group = "com.agentdock"
-version = "0.1.84"
+version = "0.1.86"
 
 repositories {
     maven("https://maven.aliyun.com/repository/public")
@@ -75,7 +75,7 @@ intellijPlatform {
         """.trimIndent()
 
         changeNotes = """
-            Matches usage-header badges to the light mint pill reference style.
+            Removes rectangular background corners from usage and session preview popups.
         """.trimIndent()
     }
 

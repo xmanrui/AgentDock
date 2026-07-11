@@ -94,9 +94,9 @@ internal class SessionPreviewPopup(
         val window = JWindow(owner).apply {
             type = Window.Type.POPUP
             focusableWindowState = false
-            runCatching { background = Color(0, 0, 0, 0) }
             contentPane = content
             size = popupSize
+            RoundedPopupWindowSupport.configure(this, JBUI.scale(CORNER_RADIUS))
             location = popupLocation(cardBounds, popupSize, screenBounds)
         }
 
