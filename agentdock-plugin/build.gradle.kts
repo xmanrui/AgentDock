@@ -75,7 +75,11 @@ intellijPlatform {
         """.trimIndent()
 
         changeNotes = """
-            AgentDock 1.0.0 marks the first stable release.
+            <ul>
+                <li>Adds local per-session token usage totals, seven-day trends, and average response-time metrics.</li>
+                <li>Improves session previews with a clearer conversation-style layout.</li>
+                <li>Refines provider usage popups and right-side panel alignment.</li>
+            </ul>
         """.trimIndent()
     }
 
