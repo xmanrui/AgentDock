@@ -7,7 +7,7 @@ plugins {
 }
 
 group = "com.agentdock"
-version = "0.1.86"
+version = "0.1.87"
 
 repositories {
     maven("https://maven.aliyun.com/repository/public")
@@ -75,7 +75,7 @@ intellijPlatform {
         """.trimIndent()
 
         changeNotes = """
-            Removes rectangular background corners from usage and session preview popups.
+            Aligns the AgentDock header with the search, filter, and session content edges.
         """.trimIndent()
     }
 

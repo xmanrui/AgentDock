@@ -47,8 +47,12 @@ class PersistentRightToolWindowLayoutTest {
         val surface = assertNotNull(
             (surfaceWrapper.layout as BorderLayout).getLayoutComponent(surfaceWrapper, BorderLayout.CENTER)
         ) as JPanel
+        val header = assertNotNull(
+            (surface.layout as BorderLayout).getLayoutComponent(surface, BorderLayout.NORTH)
+        ) as JPanel
         assertFalse(resizeHandle.isOpaque)
         assertFalse(surface.isOpaque)
+        assertEquals(10, header.border.getBorderInsets(header).left)
         surface.size = Dimension(200, 200)
         surface.doLayout()
         val image = BufferedImage(200, 200, BufferedImage.TYPE_INT_ARGB)

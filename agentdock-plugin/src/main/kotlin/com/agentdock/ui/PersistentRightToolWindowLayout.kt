@@ -108,7 +108,7 @@ internal class PersistentRightToolWindowLayout(
             isOpaque = false
             border = BorderFactory.createEmptyBorder(
                 0,
-                HEADER_HORIZONTAL_PADDING,
+                CONTENT_HORIZONTAL_PADDING,
                 0,
                 HEADER_BUTTON_PADDING
             )
@@ -233,7 +233,7 @@ internal class PersistentRightToolWindowLayout(
         private const val SURFACE_MARGIN = 4
         private const val CORNER_RADIUS = 8
         private const val HEADER_HEIGHT = 40
-        private const val HEADER_HORIZONTAL_PADDING = 12
+        private const val CONTENT_HORIZONTAL_PADDING = 10
         private const val HEADER_BUTTON_PADDING = 4
 
         private fun findNativeDecorator(start: JComponent?): JComponent? {

@@ -72,6 +72,7 @@ object AgentDockHtmlRenderer {
                   --yellow: #e8b75d;
                   --red: #f06b73;
                   --radius: 8px;
+                  --content-horizontal-padding: 10px;
                   --sans: -apple-system, BlinkMacSystemFont, "SF Pro Display", "Segoe UI", "PingFang SC", "Microsoft YaHei", sans-serif;
                 }
 
@@ -92,7 +93,6 @@ object AgentDockHtmlRenderer {
                   display: grid;
                   grid-template-rows: 48px 42px minmax(0, 1fr);
                   background: rgba(27, 31, 27, .98);
-                  border-left: 1px solid var(--line-soft);
                 }
 
                 .plain-button,
@@ -119,7 +119,7 @@ object AgentDockHtmlRenderer {
                   grid-template-columns: minmax(0, 1fr);
                   gap: 8px;
                   align-items: center;
-                  padding: 8px 10px;
+                  padding: 8px var(--content-horizontal-padding);
                   border-bottom: 1px solid var(--line-soft);
                 }
 
@@ -159,7 +159,7 @@ object AgentDockHtmlRenderer {
                   grid-template-columns: minmax(0, 1fr) auto;
                   align-items: center;
                   gap: 8px;
-                  padding: 7px 10px;
+                  padding: 7px var(--content-horizontal-padding);
                   border-bottom: 1px solid var(--line-soft);
                 }
 
@@ -259,7 +259,7 @@ object AgentDockHtmlRenderer {
                 .sessions-list {
                   min-height: 0;
                   overflow: auto;
-                  padding: 9px 10px 16px;
+                  padding: 9px var(--content-horizontal-padding) 16px;
                   display: flex;
                   flex-direction: column;
                   gap: 8px;
