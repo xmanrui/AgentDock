@@ -13,7 +13,8 @@ import java.util.concurrent.ConcurrentHashMap
 
 data class SessionTokenUsage(
     val totalTokens: Long? = null,
-    val dailyTokens: List<Long> = emptyList()
+    val dailyTokens: List<Long> = emptyList(),
+    val dailyAverageResponseMillis: List<Long?> = emptyList()
 )
 
 class LocalSessionTokenUsageService(
@@ -30,6 +31,18 @@ class LocalSessionTokenUsageService(
             return memoryCache.usage
         }
         return persistedUsage(session, anchorDate) ?: unavailableUsage()
+    }
+
+    fun cachedProviderTotal(sessions: Iterable<AgentSession>, providerId: String): Long? {
+        var total = 0L
+        var foundUsage = false
+        sessions.forEach { session ->
+            if (session.providerId != providerId) return@forEach
+            val sessionTotal = cached(session).totalTokens ?: return@forEach
+            foundUsage = true
+            total = if (sessionTotal > Long.MAX_VALUE - total) Long.MAX_VALUE else total + sessionTotal
+        }
+        return total.takeIf { foundUsage }
     }
 
     fun load(session: AgentSession): SessionTokenUsage {
@@ -80,6 +93,7 @@ class LocalSessionTokenUsageService(
 
     private fun parseCodex(source: File, anchorDate: LocalDate): SessionTokenUsage {
         val dailyTotals = mutableMapOf<LocalDate, Long>()
+        val responseTimes = DailyResponseTimeAccumulator(clock)
         val fallbackDate = sourceDate(source, anchorDate)
         var previousCumulative: Long? = null
         var totalTokens = 0L
@@ -87,48 +101,64 @@ class LocalSessionTokenUsageService(
 
         source.useLines { lines ->
             lines.forEach { line ->
-                if (!line.contains("\"token_count\"")) return@forEach
+                val tokenCandidate = line.contains("\"token_count\"")
+                val taskCompleteCandidate = line.contains("\"task_complete\"")
+                if (!tokenCandidate && !taskCompleteCandidate) return@forEach
                 val json = parseObject(line) ?: return@forEach
-                if (json.string("type") != "event_msg") return@forEach
                 val payload = json.obj("payload") ?: return@forEach
-                if (payload.string("type") != "token_count") return@forEach
-                val info = payload.obj("info") ?: return@forEach
-                val cumulative = info.obj("total_token_usage")?.nonNegativeLong("total_tokens")
-                val lastUsage = info.obj("last_token_usage")?.nonNegativeLong("total_tokens")
-                if (cumulative == null && lastUsage == null) return@forEach
+                when {
+                    json.string("type") == "event_msg" && payload.string("type") == "token_count" -> {
+                        val info = payload.obj("info") ?: return@forEach
+                        val cumulative = info.obj("total_token_usage")?.nonNegativeLong("total_tokens")
+                        val lastUsage = info.obj("last_token_usage")?.nonNegativeLong("total_tokens")
+                        if (cumulative == null && lastUsage == null) return@forEach
 
-                foundUsage = true
-                val delta = if (cumulative != null) {
-                    val previous = previousCumulative
-                    previousCumulative = cumulative
-                    when {
-                        previous == null -> cumulative
-                        cumulative >= previous -> cumulative - previous
-                        else -> cumulative
+                        foundUsage = true
+                        val delta = if (cumulative != null) {
+                            val previous = previousCumulative
+                            previousCumulative = cumulative
+                            when {
+                                previous == null -> cumulative
+                                cumulative >= previous -> cumulative - previous
+                                else -> cumulative
+                            }
+                        } else {
+                            lastUsage ?: 0L
+                        }
+                        totalTokens = totalTokens.safePlus(delta)
+                        val date = json.string("timestamp")?.toLocalDate() ?: fallbackDate
+                        dailyTotals[date] = dailyTotals.getOrDefault(date, 0L).safePlus(delta)
                     }
-                } else {
-                    lastUsage ?: 0L
+                    json.string("type") == "event_msg" && payload.string("type") == "task_complete" -> {
+                        val durationMillis = payload.nonNegativeLong("duration_ms") ?: return@forEach
+                        responseTimes.record(durationMillis, json.string("timestamp")?.toInstantOrNull())
+                    }
                 }
-                totalTokens = totalTokens.safePlus(delta)
-                val date = json.string("timestamp")?.toLocalDate() ?: fallbackDate
-                dailyTotals[date] = dailyTotals.getOrDefault(date, 0L).safePlus(delta)
             }
         }
 
-        return buildUsage(foundUsage, totalTokens, dailyTotals, anchorDate)
+        return buildUsage(foundUsage, totalTokens, dailyTotals, responseTimes, anchorDate)
     }
 
     private fun parseClaudeCode(source: File, anchorDate: LocalDate): SessionTokenUsage {
         val samples = linkedMapOf<String, TokenSample>()
+        val responseTimes = DailyResponseTimeAccumulator(clock)
         val fallbackDate = sourceDate(source, anchorDate)
         var anonymousIndex = 0
         var foundUsage = false
 
         source.useLines { lines ->
             lines.forEach { line ->
-                if (!line.contains("\"usage\"")) return@forEach
+                if (!line.contains("\"assistant\"") && !line.contains("\"turn_duration\"")) return@forEach
                 val json = parseObject(line) ?: return@forEach
-                if (json.string("type") != "assistant") return@forEach
+                val type = json.string("type") ?: return@forEach
+                val timestamp = json.string("timestamp")?.toInstantOrNull()
+                if (type == "system" && json.string("subtype") == "turn_duration") {
+                    val durationMillis = json.nonNegativeLong("durationMs") ?: return@forEach
+                    responseTimes.record(durationMillis, timestamp)
+                    return@forEach
+                }
+                if (type != "assistant") return@forEach
                 val message = json.obj("message")
                 val usage = message?.obj("usage") ?: json.obj("usage") ?: return@forEach
                 val tokenValues = CLAUDE_TOKEN_FIELDS.mapNotNull { field -> usage.nonNegativeLong(field) }
@@ -158,13 +188,14 @@ class LocalSessionTokenUsageService(
             totalTokens = totalTokens.safePlus(sample.tokens)
             dailyTotals[sample.date] = dailyTotals.getOrDefault(sample.date, 0L).safePlus(sample.tokens)
         }
-        return buildUsage(foundUsage, totalTokens, dailyTotals, anchorDate)
+        return buildUsage(foundUsage, totalTokens, dailyTotals, responseTimes, anchorDate)
     }
 
     private fun buildUsage(
         foundUsage: Boolean,
         totalTokens: Long,
         dailyTotals: Map<LocalDate, Long>,
+        responseTimes: DailyResponseTimeAccumulator,
         anchorDate: LocalDate
     ): SessionTokenUsage {
         val firstDate = anchorDate.minusDays((DAY_COUNT - 1).toLong())
@@ -173,26 +204,33 @@ class LocalSessionTokenUsageService(
         }
         return SessionTokenUsage(
             totalTokens = totalTokens.takeIf { foundUsage },
-            dailyTokens = dailyTokens
+            dailyTokens = dailyTokens,
+            dailyAverageResponseMillis = responseTimes.dailyAverages(anchorDate)
         )
     }
 
     private fun unavailableUsage(): SessionTokenUsage = SessionTokenUsage(
         totalTokens = null,
-        dailyTokens = List(DAY_COUNT) { 0L }
+        dailyTokens = List(DAY_COUNT) { 0L },
+        dailyAverageResponseMillis = List(DAY_COUNT) { null }
     )
 
     private fun persistedUsage(session: AgentSession, anchorDate: LocalDate): SessionTokenUsage? {
         if (
             !session.tokenUsageCached ||
+            session.sessionMetricsCacheVersion != CACHE_VERSION ||
             session.tokenUsageAnchorEpochDay != anchorDate.toEpochDay() ||
-            session.tokenUsageDaily.size != DAY_COUNT
+            session.tokenUsageDaily.size != DAY_COUNT ||
+            session.averageResponseTimeDailyMillis.size != DAY_COUNT
         ) {
             return null
         }
         return SessionTokenUsage(
             totalTokens = session.tokenUsageTotal.takeIf { session.tokenUsageAvailable },
-            dailyTokens = session.tokenUsageDaily.toList()
+            dailyTokens = session.tokenUsageDaily.toList(),
+            dailyAverageResponseMillis = session.averageResponseTimeDailyMillis.map { value ->
+                value.takeIf { it >= 0L }
+            }
         )
     }
 
@@ -205,6 +243,10 @@ class LocalSessionTokenUsageService(
         session.tokenUsageSourceModifiedAt = cached.modifiedAt
         session.tokenUsageSourceLength = cached.length
         session.tokenUsageAnchorEpochDay = cached.anchorDate.toEpochDay()
+        session.averageResponseTimeDailyMillis = cached.usage.dailyAverageResponseMillis
+            .map { value -> value ?: MISSING_RESPONSE_TIME }
+            .toMutableList()
+        session.sessionMetricsCacheVersion = CACHE_VERSION
     }
 
     private fun sourceDate(source: File, fallback: LocalDate): LocalDate {
@@ -238,13 +280,13 @@ class LocalSessionTokenUsageService(
         return runCatching { value.asLong }.getOrNull()?.coerceAtLeast(0L)
     }
 
-    private fun String.toLocalDate(): LocalDate? {
-        val instant = runCatching { Instant.parse(this) }
+    private fun String.toInstantOrNull(): Instant? {
+        return runCatching { Instant.parse(this) }
             .recoverCatching { OffsetDateTime.parse(this).toInstant() }
             .getOrNull()
-            ?: return null
-        return instant.atZone(clock.zone).toLocalDate()
     }
+
+    private fun String.toLocalDate(): LocalDate? = toInstantOrNull()?.atZone(clock.zone)?.toLocalDate()
 
     private fun Long.safePlus(value: Long): Long {
         return if (value > Long.MAX_VALUE - this) Long.MAX_VALUE else this + value
@@ -262,8 +304,39 @@ class LocalSessionTokenUsageService(
         val usage: SessionTokenUsage
     )
 
+    private class DailyResponseTimeAccumulator(private val clock: Clock) {
+        private val dailyDurations = mutableMapOf<LocalDate, DurationAggregate>()
+
+        fun record(durationMillis: Long, completedAt: Instant?) {
+            completedAt ?: return
+            val date = completedAt.atZone(clock.zone).toLocalDate()
+            val aggregate = dailyDurations.getOrPut(date) { DurationAggregate() }
+            aggregate.totalMillis = if (durationMillis > Long.MAX_VALUE - aggregate.totalMillis) {
+                Long.MAX_VALUE
+            } else {
+                aggregate.totalMillis + durationMillis
+            }
+            aggregate.count += 1L
+        }
+
+        fun dailyAverages(anchorDate: LocalDate): List<Long?> {
+            val firstDate = anchorDate.minusDays((DAY_COUNT - 1).toLong())
+            return List(DAY_COUNT) { index ->
+                val aggregate = dailyDurations[firstDate.plusDays(index.toLong())]
+                aggregate?.takeIf { it.count > 0L }?.let { it.totalMillis / it.count }
+            }
+        }
+    }
+
+    private data class DurationAggregate(
+        var totalMillis: Long = 0L,
+        var count: Long = 0L
+    )
+
     companion object {
-        private const val DAY_COUNT = 14
+        private const val CACHE_VERSION = 2
+        private const val DAY_COUNT = 7
+        private const val MISSING_RESPONSE_TIME = -1L
         private val CLAUDE_TOKEN_FIELDS = listOf(
             "input_tokens",
             "output_tokens",

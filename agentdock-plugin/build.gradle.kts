@@ -7,7 +7,7 @@ plugins {
 }
 
 group = "com.agentdock"
-version = "0.1.74"
+version = "0.1.84"
 
 repositories {
     maven("https://maven.aliyun.com/repository/public")
@@ -75,7 +75,7 @@ intellijPlatform {
         """.trimIndent()
 
         changeNotes = """
-            Replaces session summaries with per-session historical token totals and a reference-matched 14-day usage trend.
+            Matches usage-header badges to the light mint pill reference style.
         """.trimIndent()
     }
 

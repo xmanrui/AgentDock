@@ -25,5 +25,7 @@ data class AgentSession(
     var tokenUsageSourcePath: String = "",
     var tokenUsageSourceModifiedAt: Long = 0L,
     var tokenUsageSourceLength: Long = 0L,
-    var tokenUsageAnchorEpochDay: Long = 0L
+    var tokenUsageAnchorEpochDay: Long = 0L,
+    var averageResponseTimeDailyMillis: MutableList<Long> = mutableListOf(),
+    var sessionMetricsCacheVersion: Int = 0
 )

@@ -24,6 +24,7 @@ object AgentDockHtmlRenderer {
         val summary: String,
         val totalTokens: Long? = null,
         val dailyTokens: List<Long> = emptyList(),
+        val dailyAverageResponseMillis: List<Long?> = emptyList(),
         val statusKey: String,
         val statusLabel: String,
         val terminalOpen: Boolean = false,
@@ -346,32 +347,45 @@ object AgentDockHtmlRenderer {
                   }
                 }
 
-                .session-token-usage {
+                .session-metrics {
                   min-height: 48px;
                   margin-top: 7px;
                   display: grid;
-                  grid-template-columns: auto minmax(58px, 1fr) minmax(48px, auto);
+                  grid-template-columns: repeat(2, minmax(0, 1fr));
                   align-items: center;
-                  gap: 8px;
+                  gap: 12px;
                 }
 
-                .session-token-label {
+                .session-token-usage,
+                .session-response-time {
+                  min-width: 0;
+                  height: 48px;
+                  display: grid;
+                  grid-template-columns: auto minmax(32px, 1fr) minmax(40px, auto);
+                  align-items: center;
+                  gap: 6px;
+                }
+
+                .session-token-label,
+                .session-response-label {
                   color: var(--text-dim);
                   font-size: 11px;
                   line-height: 1;
                   white-space: nowrap;
                 }
 
-                .session-token-chart {
+                .session-token-chart,
+                .session-response-chart {
                   width: 100%;
-                  max-width: 240px;
+                  max-width: 180px;
                   min-width: 0;
                   height: 48px;
                   position: relative;
                   justify-self: end;
                 }
 
-                .session-token-chart svg {
+                .session-token-chart svg,
+                .session-response-chart svg {
                   width: 100%;
                   height: 48px;
                   display: block;
@@ -405,14 +419,21 @@ object AgentDockHtmlRenderer {
                   pointer-events: none;
                 }
 
-                .session-token-chart.unavailable .token-trend-line {
+                .token-trend-marker.missing {
+                  background: var(--text-dim);
+                  opacity: .35;
+                }
+
+                .session-token-chart.unavailable .token-trend-line,
+                .session-response-chart.unavailable .token-trend-line {
                   stroke: var(--text-dim);
                   stroke-dasharray: 3 3;
                   opacity: .5;
                 }
 
-                .session-token-total {
-                  min-width: 48px;
+                .session-token-total,
+                .session-response-today {
+                  min-width: 40px;
                   color: var(--text);
                   font-size: 12px;
                   font-weight: 760;
@@ -431,15 +452,20 @@ object AgentDockHtmlRenderer {
                 }
 
                 @media (max-width: 300px) {
-                  .session-token-usage {
-                    grid-template-columns: auto minmax(42px, 1fr) auto;
-                    gap: 5px;
+                  .session-metrics {
+                    gap: 7px;
                   }
 
-                  .session-token-label {
+                  .session-token-usage,
+                  .session-response-time {
+                    grid-template-columns: auto minmax(24px, 1fr) auto;
+                    gap: 4px;
+                  }
+
+                  .session-token-label,
+                  .session-response-label {
                     font-size: 10px;
                   }
-
                 }
 
                 .session-time {
@@ -604,12 +630,25 @@ object AgentDockHtmlRenderer {
                   }
 
                   function normalizedDailyTokens(item) {
-                    var values = Array.isArray(item.dailyTokens) ? item.dailyTokens.slice(-14) : [];
+                    var values = Array.isArray(item.dailyTokens) ? item.dailyTokens.slice(-7) : [];
                     values = values.map(function (value) {
                       var numeric = Number(value);
                       return Number.isFinite(numeric) ? Math.max(0, numeric) : 0;
                     });
-                    while (values.length < 14) values.unshift(0);
+                    while (values.length < 7) values.unshift(0);
+                    return values;
+                  }
+
+                  function normalizedDailyResponseMillis(item) {
+                    var values = Array.isArray(item.dailyAverageResponseMillis)
+                      ? item.dailyAverageResponseMillis.slice(-7)
+                      : [];
+                    values = values.map(function (value) {
+                      if (value === null || value === undefined) return null;
+                      var numeric = Number(value);
+                      return Number.isFinite(numeric) && numeric >= 0 ? numeric : null;
+                    });
+                    while (values.length < 7) values.unshift(null);
                     return values;
                   }
 
@@ -626,9 +665,19 @@ object AgentDockHtmlRenderer {
                     return String(Math.round(numeric));
                   }
 
-                  function tokenTrendGradientId(sessionId) {
+                  function formatResponseTime(value) {
+                    var millis = Math.max(0, Number(value) || 0);
+                    var seconds = millis / 1000;
+                    return seconds.toFixed(1).replace(/\.0$/, "") + "S";
+                  }
+
+                  function metricTrendGradientId(sessionId, metricKey) {
                     var safeId = String(sessionId || "session").replace(/[^a-zA-Z0-9_-]/g, "-");
-                    return "agentdock-token-trend-fill-" + safeId;
+                    return "agentdock-" + metricKey + "-trend-fill-" + safeId;
+                  }
+
+                  function tokenTrendGradientId(sessionId) {
+                    return metricTrendGradientId(sessionId, "token");
                   }
 
                   function tokenTrendCurveSegments(points) {
@@ -644,24 +693,33 @@ object AgentDockHtmlRenderer {
                     return segments;
                   }
 
-                  function renderTokenTrend(dailyValues, available, sessionId) {
+                  function renderMetricTrend(dailyValues, available, gradientId, availableLabel, unavailableLabel, formatter) {
                     var values = dailyValues;
                     var width = 240;
                     var height = 48;
                     var horizontalPadding = 3.25;
                     var topPadding = 8;
                     var bottomPadding = 5;
-                    var maxValue = Math.max.apply(null, values);
-                    var points = values.map(function (value, index) {
-                      var x = horizontalPadding + index * (width - horizontalPadding * 2) / (values.length - 1);
-                      var y = available && maxValue > 0
-                        ? height - bottomPadding - value * (height - topPadding - bottomPadding) / maxValue
-                        : height / 2;
-                      return {x: x, y: y, value: value};
+                    var indexedValues = values.map(function (value, index) {
+                      var hasData = value !== null && value !== undefined && Number.isFinite(Number(value));
+                      return {index: index, value: hasData ? Number(value) : 0, hasData: hasData};
                     });
+                    var valuesWithData = indexedValues.filter(function (entry) { return entry.hasData; });
+                    var maxValue = valuesWithData.length
+                      ? Math.max.apply(null, valuesWithData.map(function (entry) { return entry.value; }))
+                      : 0;
+                    var points = available && valuesWithData.length ? indexedValues.map(function (entry) {
+                      var x = horizontalPadding + entry.index * (width - horizontalPadding * 2) / (values.length - 1);
+                      var y = maxValue > 0
+                        ? height - bottomPadding - entry.value * (height - topPadding - bottomPadding) / maxValue
+                        : height / 2;
+                      return {x: x, y: y, value: entry.value, hasData: entry.hasData};
+                    }) : [
+                      {x: horizontalPadding, y: height / 2, value: 0, hasData: false},
+                      {x: width - horizontalPadding, y: height / 2, value: 0, hasData: false}
+                    ];
                     var curveSegments = tokenTrendCurveSegments(points);
                     var linePath = "M " + points[0].x.toFixed(2) + " " + points[0].y.toFixed(2) + curveSegments;
-                    var gradientId = tokenTrendGradientId(sessionId);
                     var baselineY = height - bottomPadding;
                     var areaPath = "M " + points[0].x.toFixed(2) + " " + baselineY.toFixed(2) +
                       " L " + points[0].x.toFixed(2) + " " + points[0].y.toFixed(2) + curveSegments +
@@ -669,12 +727,15 @@ object AgentDockHtmlRenderer {
                     var markers = available ? points.map(function (point) {
                       var left = point.x * 100 / width;
                       var top = point.y * 100 / height;
-                      return '<span class="token-trend-marker" aria-hidden="true" style="left:' + left.toFixed(2) + '%;top:' + top.toFixed(2) + '%"></span>';
+                      var missing = point.hasData ? "" : " missing";
+                      return '<span class="token-trend-marker' + missing + '" aria-hidden="true" style="left:' + left.toFixed(2) + '%;top:' + top.toFixed(2) + '%"></span>';
                     }).join("") : "";
                     var label = available
-                      ? "14-day token usage, oldest to today: " + dailyValues.map(formatTokenCount).join(", ")
-                      : "Token usage unavailable";
-                    var area = available && maxValue > 0
+                      ? availableLabel + dailyValues.map(function (value) {
+                          return value === null || value === undefined ? "No data" : formatter(value);
+                        }).join(", ")
+                      : unavailableLabel;
+                    var area = available && maxValue > 0 && points.length > 1
                       ? '<defs><linearGradient id="' + attr(gradientId) + '" gradientUnits="userSpaceOnUse" x1="0" y1="' + topPadding + '" x2="0" y2="' + baselineY + '">' +
                           '<stop offset="0%" stop-color="#4BDE80" stop-opacity="0.32"></stop>' +
                           '<stop offset="100%" stop-color="#4BDE80" stop-opacity="0"></stop>' +
@@ -686,6 +747,28 @@ object AgentDockHtmlRenderer {
                       area +
                       '<path class="token-trend-line" d="' + linePath + '" data-segment-count="' + (points.length - 1) + '"></path>' +
                     '</svg>' + markers;
+                  }
+
+                  function renderTokenTrend(dailyValues, available, sessionId) {
+                    return renderMetricTrend(
+                      dailyValues,
+                      available,
+                      tokenTrendGradientId(sessionId),
+                      "7-day token usage, oldest to today: ",
+                      "Token usage unavailable",
+                      formatTokenCount
+                    );
+                  }
+
+                  function renderResponseTrend(dailyValues, available, sessionId) {
+                    return renderMetricTrend(
+                      dailyValues,
+                      available,
+                      metricTrendGradientId(sessionId, "response"),
+                      "7-day average response time, oldest to today: ",
+                      "Average response time unavailable",
+                      formatResponseTime
+                    );
                   }
 
                   function renderTokenUsage(item) {
@@ -700,6 +783,29 @@ object AgentDockHtmlRenderer {
                       '<span class="session-token-label">Token 用量</span>' +
                       '<span class="session-token-chart' + (available ? "" : " unavailable") + '">' + renderTokenTrend(values, available, item.id) + '</span>' +
                       '<span class="session-token-total" title="' + attr(totalTitle) + '">' + escapeHtml(totalLabel) + '</span>' +
+                    '</div>';
+                  }
+
+                  function renderAverageResponseTime(item) {
+                    var values = normalizedDailyResponseMillis(item);
+                    var available = values.some(function (value) { return value !== null; });
+                    var today = values[values.length - 1];
+                    var todayAvailable = today !== null;
+                    var todayLabel = todayAvailable ? formatResponseTime(today) : "—";
+                    var todayTitle = todayAvailable
+                      ? "Today's average response time: " + formatResponseTime(today)
+                      : "No response recorded today";
+                    return '<div class="session-response-time" aria-label="Average response time">' +
+                      '<span class="session-response-label">平均响应</span>' +
+                      '<span class="session-response-chart' + (available ? "" : " unavailable") + '">' + renderResponseTrend(values, available, item.id) + '</span>' +
+                      '<span class="session-response-today" title="' + attr(todayTitle) + '">' + escapeHtml(todayLabel) + '</span>' +
+                    '</div>';
+                  }
+
+                  function renderSessionMetrics(item) {
+                    return '<div class="session-metrics">' +
+                      renderTokenUsage(item) +
+                      renderAverageResponseTime(item) +
                     '</div>';
                   }
 
@@ -771,7 +877,7 @@ object AgentDockHtmlRenderer {
                         '</div>' +
                         renderTerminalIndicator(item) +
                       '</div>' +
-                      renderTokenUsage(item) +
+                      renderSessionMetrics(item) +
                       '<div class="session-footer">' +
                         '<div class="session-time" title="' + attr(item.updatedLabel) + '">' + escapeHtml(item.updatedLabel) + '</div>' +
                         '<div class="session-actions">' +

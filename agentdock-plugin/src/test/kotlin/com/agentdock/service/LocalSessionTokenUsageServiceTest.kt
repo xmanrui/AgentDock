@@ -18,7 +18,7 @@ class LocalSessionTokenUsageServiceTest {
     private val clock = Clock.fixed(Instant.parse("2026-07-11T12:00:00Z"), ZoneOffset.UTC)
 
     @Test
-    fun `computes Codex history from cumulative deltas and keeps a 14 day series`() = withHome { home ->
+    fun `computes Codex token and response metrics as 7 day series`() = withHome { home ->
         val source = File(home, "codex.jsonl")
         source.writeText(
             listOf(
@@ -26,7 +26,11 @@ class LocalSessionTokenUsageServiceTest {
                 codexUsage("2026-07-01T10:00:00Z", cumulative = 100, last = 100),
                 codexUsage("2026-07-02T10:00:00Z", cumulative = 150, last = 50),
                 codexUsage("2026-07-02T10:00:01Z", cumulative = 150, last = 50),
-                codexUsage("2026-07-10T10:00:00Z", cumulative = 30, last = 30)
+                codexTaskComplete("2026-07-05T10:00:01Z", durationMillis = 1_000),
+                codexTaskComplete("2026-07-10T09:00:02Z", durationMillis = 2_000),
+                codexUsage("2026-07-10T10:00:00Z", cumulative = 30, last = 30),
+                codexTurnAborted("2026-07-10T10:30:00Z", durationMillis = 90_000),
+                codexTaskComplete("2026-07-10T11:00:04Z", durationMillis = 4_000)
             ).joinToString("\n")
         )
         val session = session(CLIProvider.CODEX_ID, source)
@@ -35,14 +39,16 @@ class LocalSessionTokenUsageServiceTest {
         val usage = service.load(session)
 
         assertEquals(180L, usage.totalTokens)
-        assertEquals(14, usage.dailyTokens.size)
-        assertEquals(100L, usage.dailyTokens[3])
-        assertEquals(50L, usage.dailyTokens[4])
-        assertEquals(30L, usage.dailyTokens[12])
+        assertEquals(7, usage.dailyTokens.size)
+        assertEquals(30L, usage.dailyTokens[5])
+        assertEquals(30L, usage.dailyTokens.sum())
+        assertEquals(listOf(1_000L, null, null, null, null, 3_000L, null), usage.dailyAverageResponseMillis)
         assertEquals(usage, service.cached(session))
         assertTrue(session.tokenUsageCached)
         assertEquals(180L, session.tokenUsageTotal)
         assertEquals(usage.dailyTokens, session.tokenUsageDaily)
+        assertEquals(listOf(1_000L, -1L, -1L, -1L, -1L, 3_000L, -1L), session.averageResponseTimeDailyMillis)
+        assertEquals(2, session.sessionMetricsCacheVersion)
     }
 
     @Test
@@ -64,9 +70,38 @@ class LocalSessionTokenUsageServiceTest {
     }
 
     @Test
+    fun `aggregates cached token totals for one provider`() = withHome { home ->
+        val firstSource = File(home, "codex-first.jsonl").apply {
+            writeText(codexUsage("2026-07-10T10:00:00Z", cumulative = 90, last = 90))
+        }
+        val secondSource = File(home, "codex-second.jsonl").apply {
+            writeText(codexUsage("2026-07-10T11:00:00Z", cumulative = 120, last = 120))
+        }
+        val claudeSource = File(home, "claude.jsonl").apply {
+            writeText(claudeUsage("2026-07-10T12:00:00Z", "message", 3, 7, 0, 0))
+        }
+        val sessions = listOf(
+            session(CLIProvider.CODEX_ID, firstSource),
+            session(CLIProvider.CODEX_ID, secondSource),
+            session(CLIProvider.CLAUDE_CODE_ID, claudeSource)
+        )
+        val service = LocalSessionTokenUsageService(LocalSessionContentService(home), clock)
+        sessions.forEach(service::load)
+
+        assertEquals(210L, service.cachedProviderTotal(sessions, CLIProvider.CODEX_ID))
+        assertEquals(10L, service.cachedProviderTotal(sessions, CLIProvider.CLAUDE_CODE_ID))
+        assertNull(service.cachedProviderTotal(sessions, "unsupported"))
+    }
+
+    @Test
     fun `token usage cache survives project state serialization`() = withHome { home ->
         val source = File(home, "codex.jsonl")
-        source.writeText(codexUsage("2026-07-10T10:00:00Z", cumulative = 90, last = 90))
+        source.writeText(
+            listOf(
+                codexTaskComplete("2026-07-10T10:00:00Z", durationMillis = 3_000),
+                codexUsage("2026-07-10T10:00:00Z", cumulative = 90, last = 90)
+            ).joinToString("\n")
+        )
         val session = session(CLIProvider.CODEX_ID, source)
         val service = LocalSessionTokenUsageService(LocalSessionContentService(home), clock)
         val usage = service.load(session)
@@ -87,10 +122,16 @@ class LocalSessionTokenUsageServiceTest {
         source.writeText(
             listOf(
                 claudeUsage("2026-06-20T10:00:00Z", "old", 100, 20, 0, 0),
+                claudeUser("2026-07-05T09:59:58Z", "first prompt"),
                 claudeUsage("2026-07-05T10:00:00Z", "message-a", 2, 10, 20, 30),
                 claudeUsage("2026-07-05T10:00:01Z", "message-a", 2, 10, 20, 30),
+                claudeTurnDuration("2026-07-05T10:00:02Z", durationMillis = 2_000),
+                claudeUser("2026-07-06T09:59:55Z", "second prompt"),
                 claudeUsage("2026-07-06T10:00:00Z", "message-a", 2, 15, 20, 30),
-                claudeUsage("2026-07-10T10:00:00Z", "message-b", 3, 4, 5, 6)
+                claudeTurnDuration("2026-07-06T10:00:01Z", durationMillis = 5_000),
+                claudeUser("2026-07-10T09:59:56Z", "third prompt"),
+                claudeUsage("2026-07-10T10:00:00Z", "message-b", 3, 4, 5, 6),
+                claudeTurnDuration("2026-07-10T10:00:01Z", durationMillis = 4_000)
             ).joinToString("\n")
         )
         val session = session(CLIProvider.CLAUDE_CODE_ID, source)
@@ -99,9 +140,29 @@ class LocalSessionTokenUsageServiceTest {
         val usage = service.load(session)
 
         assertEquals(205L, usage.totalTokens)
-        assertEquals(67L, usage.dailyTokens[8])
-        assertEquals(18L, usage.dailyTokens[12])
+        assertEquals(67L, usage.dailyTokens[1])
+        assertEquals(18L, usage.dailyTokens[5])
         assertEquals(85L, usage.dailyTokens.sum())
+        assertEquals(listOf(2_000L, 5_000L, null, null, null, 4_000L, null), usage.dailyAverageResponseMillis)
+    }
+
+    @Test
+    fun `uses Claude turn duration and ignores unfinished turns`() = withHome { home ->
+        val source = File(home, "claude.jsonl")
+        source.writeText(
+            listOf(
+                claudeUser("2026-07-10T10:00:00Z", "real prompt"),
+                claudeAssistant("2026-07-10T10:00:02Z"),
+                claudeTurnDuration("2026-07-10T10:00:03Z", durationMillis = 2_000),
+                claudeUser("2026-07-10T10:00:10Z", "unfinished prompt"),
+                claudeAssistant("2026-07-10T10:00:11Z")
+            ).joinToString("\n")
+        )
+
+        val usage = LocalSessionTokenUsageService(LocalSessionContentService(home), clock)
+            .load(session(CLIProvider.CLAUDE_CODE_ID, source))
+
+        assertEquals(listOf(null, null, null, null, null, 2_000L, null), usage.dailyAverageResponseMillis)
     }
 
     @Test
@@ -115,11 +176,20 @@ class LocalSessionTokenUsageServiceTest {
         val usage = LocalSessionTokenUsageService(LocalSessionContentService(home), clock).load(session)
 
         assertNull(usage.totalTokens)
-        assertEquals(List(14) { 0L }, usage.dailyTokens)
+        assertEquals(List(7) { 0L }, usage.dailyTokens)
+        assertEquals(List(7) { null }, usage.dailyAverageResponseMillis)
     }
 
     private fun codexUsage(timestamp: String, cumulative: Long, last: Long): String {
         return """{"timestamp":"$timestamp","type":"event_msg","payload":{"type":"token_count","info":{"last_token_usage":{"total_tokens":$last},"total_token_usage":{"total_tokens":$cumulative}}}}"""
+    }
+
+    private fun codexTaskComplete(timestamp: String, durationMillis: Long): String {
+        return """{"timestamp":"$timestamp","type":"event_msg","payload":{"type":"task_complete","duration_ms":$durationMillis}}"""
+    }
+
+    private fun codexTurnAborted(timestamp: String, durationMillis: Long): String {
+        return """{"timestamp":"$timestamp","type":"event_msg","payload":{"type":"turn_aborted","duration_ms":$durationMillis}}"""
     }
 
     private fun claudeUsage(
@@ -133,8 +203,20 @@ class LocalSessionTokenUsageServiceTest {
         return """{"timestamp":"$timestamp","type":"assistant","message":{"id":"$messageId","usage":{"input_tokens":$input,"output_tokens":$output,"cache_creation_input_tokens":$cacheCreation,"cache_read_input_tokens":$cacheRead}}}"""
     }
 
+    private fun claudeUser(timestamp: String, text: String): String {
+        return """{"timestamp":"$timestamp","type":"user","message":{"role":"user","content":"$text"}}"""
+    }
+
+    private fun claudeAssistant(timestamp: String): String {
+        return """{"timestamp":"$timestamp","type":"assistant","message":{"role":"assistant","content":[{"type":"text","text":"reply"}]}}"""
+    }
+
+    private fun claudeTurnDuration(timestamp: String, durationMillis: Long): String {
+        return """{"timestamp":"$timestamp","type":"system","subtype":"turn_duration","durationMs":$durationMillis}"""
+    }
+
     private fun session(providerId: String, source: File) = AgentSession(
-        id = "$providerId:test",
+        id = "$providerId:${source.nameWithoutExtension}",
         providerId = providerId,
         providerSessionId = "test",
         historyFilePath = source.absolutePath

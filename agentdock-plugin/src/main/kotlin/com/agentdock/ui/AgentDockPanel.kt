@@ -242,19 +242,28 @@ class AgentDockPanel(
     private fun requestProviderUsage(providerId: String, anchor: ProviderUsageAnchor) {
         val provider = providerRegistry.getProvider(providerId) ?: return
         val requestVersion = providerUsageRequestVersion.incrementAndGet()
+        val initialProjectTokenTotal = projectProviderTokenTotal(providerId)
         ApplicationManager.getApplication().invokeLater {
             if (providerUsageRequestVersion.get() == requestVersion && component.isShowing) {
-                providerUsagePopup.showLoading(provider, anchor)
+                providerUsagePopup.showLoading(provider, initialProjectTokenTotal, anchor)
             }
         }
         ApplicationManager.getApplication().executeOnPooledThread {
             val usage = providerUsageService.load(provider)
+            val projectTokenTotal = projectProviderTokenTotal(providerId)
             ApplicationManager.getApplication().invokeLater {
                 if (providerUsageRequestVersion.get() == requestVersion && component.isShowing) {
-                    providerUsagePopup.showUsage(usage, anchor)
+                    providerUsagePopup.showUsage(usage, projectTokenTotal, anchor)
                 }
             }
         }
+    }
+
+    private fun projectProviderTokenTotal(providerId: String): Long? {
+        return sessionTokenUsageService.cachedProviderTotal(
+            sessions = service.listSessions(includeArchived = true, discover = false),
+            providerId = providerId
+        )
     }
 
     private fun hideProviderUsage() {
@@ -412,6 +421,7 @@ class AgentDockPanel(
             summary = summary,
             totalTokens = tokenUsage.totalTokens,
             dailyTokens = tokenUsage.dailyTokens,
+            dailyAverageResponseMillis = tokenUsage.dailyAverageResponseMillis,
             statusKey = displayStatus.statusKey(),
             statusLabel = displayStatus.statusLabel(),
             terminalOpen = service.isTerminalOpen(id),

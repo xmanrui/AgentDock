@@ -26,6 +26,7 @@ import java.time.ZoneId
 import java.time.format.DateTimeFormatter
 import java.util.Locale
 import javax.swing.BorderFactory
+import javax.swing.Box
 import javax.swing.BoxLayout
 import javax.swing.Icon
 import javax.swing.JComponent
@@ -55,13 +56,13 @@ internal class ProviderUsagePopup(
         }
     }
 
-    fun showLoading(provider: CLIProvider, anchor: ProviderUsageAnchor) {
-        showContent(createMessageContent(provider, "Loading usage limits..."), anchor)
+    fun showLoading(provider: CLIProvider, projectTokenTotal: Long?, anchor: ProviderUsageAnchor) {
+        showContent(createMessageContent(provider, projectTokenTotal, "Loading usage limits..."), anchor)
     }
 
-    fun showUsage(usage: ProviderUsageSnapshot, anchor: ProviderUsageAnchor) {
+    fun showUsage(usage: ProviderUsageSnapshot, projectTokenTotal: Long?, anchor: ProviderUsageAnchor) {
         val content = if (usage.status == ProviderUsageSnapshot.STATUS_AVAILABLE) {
-            createAvailableContent(usage)
+            createAvailableContent(usage, projectTokenTotal)
         } else {
             val provider = CLIProvider.defaultProviders().firstOrNull { it.id == usage.providerId }
                 ?: CLIProvider(
@@ -73,7 +74,7 @@ internal class ProviderUsagePopup(
                     startCommandTemplate = "",
                     resumeCommandTemplate = ""
                 )
-            createMessageContent(provider, usage.message ?: "Usage limits are unavailable.")
+            createMessageContent(provider, projectTokenTotal, usage.message ?: "Usage limits are unavailable.")
         }
         showContent(content, anchor)
     }
@@ -127,9 +128,9 @@ internal class ProviderUsagePopup(
         )
     }
 
-    private fun createAvailableContent(usage: ProviderUsageSnapshot): JComponent {
+    internal fun createAvailableContent(usage: ProviderUsageSnapshot, projectTokenTotal: Long?): JComponent {
         val root = popupRoot()
-        root.add(createHeader(usage.providerId, usage.resetCount))
+        root.add(createHeader(usage.providerId, projectTokenTotal, usage.resetCount))
         usage.fiveHour?.let { root.add(createUsageRow("5-hour limit", it)) }
         usage.weekly?.let { root.add(createUsageRow("Weekly limit", it)) }
         if (usage.fiveHour == null && usage.weekly == null) {
@@ -138,9 +139,9 @@ internal class ProviderUsagePopup(
         return root.withPopupWidth()
     }
 
-    private fun createMessageContent(provider: CLIProvider, message: String): JComponent {
+    private fun createMessageContent(provider: CLIProvider, projectTokenTotal: Long?, message: String): JComponent {
         return popupRoot().apply {
-            add(createHeader(provider.id, null))
+            add(createHeader(provider.id, projectTokenTotal, null))
             add(createMessageLabel(message))
         }.withPopupWidth()
     }
@@ -163,10 +164,26 @@ internal class ProviderUsagePopup(
         return this
     }
 
-    private fun createHeader(providerId: String, resetCount: Long?): JComponent {
+    private fun createHeader(providerId: String, projectTokenTotal: Long?, resetCount: Long?): JComponent {
         val titleLabel = JLabel("Usage", ProviderIcons.forProvider(providerId), SwingConstants.LEADING).apply {
             foreground = TEXT
             font = font.deriveFont(Font.BOLD, font.size2D)
+        }
+        val tokenLabel = createHeaderBadge("${projectTokenTotal?.let(::formatTokenCount) ?: "—"} tokens").apply {
+            toolTipText = projectTokenTotal?.let { "${String.format(Locale.ENGLISH, "%,d", it)} tokens" }
+                ?: "Project token usage is still being calculated."
+            accessibleContext.accessibleName = "Project token total: ${text.removeSuffix(" tokens")}"
+        }
+        val trailing = JPanel().apply {
+            isOpaque = false
+            layout = BoxLayout(this, BoxLayout.X_AXIS)
+            add(tokenLabel)
+            resetCount?.let { count ->
+                add(Box.createHorizontalStrut(JBUI.scale(7)))
+                add(
+                    createHeaderBadge("$count resets")
+                )
+            }
         }
         return JPanel(BorderLayout(JBUI.scale(8), 0)).apply {
             isOpaque = false
@@ -175,18 +192,7 @@ internal class ProviderUsagePopup(
                 JBUI.Borders.empty(6, 9)
             )
             add(titleLabel, BorderLayout.CENTER)
-            resetCount?.let { count ->
-                add(
-                    JLabel("$count resets").apply {
-                        foreground = GREEN
-                        background = GREEN_SOFT
-                        isOpaque = true
-                        font = font.deriveFont(Font.BOLD, (font.size2D - 1f).coerceAtLeast(10f))
-                        border = JBUI.Borders.empty(2, 7)
-                    },
-                    BorderLayout.EAST
-                )
-            }
+            add(trailing, BorderLayout.EAST)
         }
     }
 
@@ -196,7 +202,14 @@ internal class ProviderUsagePopup(
             isOpaque = false
             add(JLabel(label).styled(TEXT_SOFT, Font.BOLD), BorderLayout.WEST)
             usage.resetsAtEpochSeconds?.let { epoch ->
-                add(JLabel(formatReset(epoch)).styled(TEXT_DIM, Font.PLAIN), BorderLayout.CENTER)
+                val resetValue = formatResetValue(epoch)
+                add(
+                    JLabel(resetValue).styled(TEXT_DIM, Font.PLAIN).apply {
+                        toolTipText = "Resets $resetValue"
+                        accessibleContext.accessibleName = "Resets $resetValue"
+                    },
+                    BorderLayout.CENTER
+                )
             }
             add(JLabel("$remaining% left").styled(TEXT, Font.BOLD), BorderLayout.EAST)
         }
@@ -237,6 +250,16 @@ internal class ProviderUsagePopup(
         return this
     }
 
+    private fun createHeaderBadge(text: String): JLabel {
+        return RoundedBadgeLabel(text, BADGE_BACKGROUND).apply {
+            foreground = BADGE_FOREGROUND
+            background = BADGE_BACKGROUND
+            font = font.deriveFont(Font.PLAIN, (font.size2D - 1f).coerceAtLeast(10f))
+            border = JBUI.Borders.empty(2, 7)
+            horizontalAlignment = SwingConstants.CENTER
+        }
+    }
+
     private fun popupLocation(anchor: Rectangle, popupSize: Dimension, screen: Rectangle): Point {
         val componentLocation = anchorComponent.locationOnScreen
         val componentBounds = Rectangle(
@@ -269,12 +292,27 @@ internal class ProviderUsagePopup(
         )
     }
 
-    private fun formatReset(epochSeconds: Long): String {
+    private fun formatResetValue(epochSeconds: Long): String {
         val zone = ZoneId.systemDefault()
         val reset = Instant.ofEpochSecond(epochSeconds).atZone(zone)
         val now = Instant.now().atZone(zone)
         val pattern = if (reset.toLocalDate() == now.toLocalDate()) "h:mm a" else "MMM d, h:mm a"
-        return "Resets " + DateTimeFormatter.ofPattern(pattern, Locale.ENGLISH).format(reset)
+        return DateTimeFormatter.ofPattern(pattern, Locale.ENGLISH).format(reset)
+    }
+
+    private fun formatTokenCount(value: Long): String {
+        val numeric = value.coerceAtLeast(0L).toDouble()
+        fun compact(divisor: Double, suffix: String): String {
+            val scaled = numeric / divisor
+            val digits = if (scaled >= 100) 0 else 1
+            return String.format(Locale.ENGLISH, "%.${digits}f", scaled).removeSuffix(".0") + suffix
+        }
+        return when {
+            numeric >= 1_000_000_000 -> compact(1_000_000_000.0, "B")
+            numeric >= 1_000_000 -> compact(1_000_000.0, "M")
+            numeric >= 1_000 -> compact(1_000.0, "K")
+            else -> value.coerceAtLeast(0L).toString()
+        }
     }
 
     private class RoundedPopupPanel(
@@ -316,6 +354,24 @@ internal class ProviderUsagePopup(
         }
     }
 
+    private class RoundedBadgeLabel(
+        text: String,
+        private val fillColor: Color
+    ) : JLabel(text) {
+        init {
+            isOpaque = false
+        }
+
+        override fun paintComponent(graphics: Graphics) {
+            val copy = graphics.create() as Graphics2D
+            copy.setRenderingHint(RenderingHints.KEY_ANTIALIASING, RenderingHints.VALUE_ANTIALIAS_ON)
+            copy.color = fillColor
+            copy.fillRoundRect(0, 0, width, height, height, height)
+            copy.dispose()
+            super.paintComponent(graphics)
+        }
+    }
+
     private object ProviderIcons {
         private val codex = IconLoader.getIcon("/icons/codex.svg", ProviderIcons::class.java)
         private val claude = IconLoader.getIcon("/icons/claude.svg", ProviderIcons::class.java)
@@ -337,7 +393,8 @@ internal class ProviderUsagePopup(
         private val TEXT_SOFT = Color(0xc3, 0xcb, 0xc0)
         private val TEXT_DIM = Color(0x88, 0x92, 0x87)
         private val GREEN = Color(0x68, 0xd9, 0x82)
-        private val GREEN_SOFT = Color(0x24, 0x47, 0x2c)
+        private val BADGE_BACKGROUND = Color(0xd9, 0xf4, 0xe4)
+        private val BADGE_FOREGROUND = Color(0x00, 0x6a, 0x2b)
         private val YELLOW = Color(0xe0, 0xb8, 0x5b)
         private val RED = Color(0xe0, 0x6b, 0x67)
         private val METER_BACKGROUND = Color(0x35, 0x3b, 0x36)

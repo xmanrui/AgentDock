@@ -22,7 +22,8 @@ class AgentDockHtmlRendererTest {
                         title = "Match the prototype page.",
                         summary = "Match the prototype page.",
                         totalTokens = 4_900_000,
-                        dailyTokens = listOf(0, 10, 40, 15, 18, 12, 16, 9, 22, 12, 8, 20, 14, 11),
+                        dailyTokens = listOf(16, 9, 22, 12, 8, 20, 14),
+                        dailyAverageResponseMillis = listOf(null, null, null, 2_100, null, null, null),
                         statusKey = "restorable",
                         statusLabel = "Restorable",
                         terminalOpen = false,
@@ -99,12 +100,29 @@ class AgentDockHtmlRendererTest {
         assertContains(html, "Pin")
         assertContains(html, "session-time")
         assertContains(html, "Token 用量")
+        assertContains(html, "平均响应")
+        assertContains(html, "session-metrics")
         assertContains(html, "session-token-usage")
+        assertContains(html, "session-response-time")
+        assertContains(html, "session-response-today")
+        assertContains(html, "renderSessionMetrics")
         assertContains(html, "renderTokenTrend")
-        assertContains(html, "14-day token usage")
+        assertContains(html, "renderResponseTrend")
+        assertContains(html, "renderMetricTrend")
+        assertContains(html, "7-day token usage")
+        assertContains(html, "7-day average response time")
         assertContains(html, "Historical total token usage")
         assertContains(html, "formatTokenCount")
+        assertContains(html, "formatResponseTime")
+        assertContains(html, "seconds.toFixed(1).replace(/\\.0$/")
+        assertContains(html, "+ \"S\"")
+        assertFalse(html.contains("+ \"ms\""))
+        assertContains(html, "Today's average response time")
+        assertContains(html, "normalizedDailyResponseMillis")
         assertContains(html, "token-trend-marker")
+        assertContains(html, ".token-trend-marker.missing")
+        assertContains(html, "valuesWithData")
+        assertContains(html, "point.hasData ? \"\" : \" missing\"")
         assertContains(html, "var values = dailyValues")
         assertContains(html, "data-point-count")
         assertContains(html, "var markers = available ? points.map")
@@ -118,7 +136,8 @@ class AgentDockHtmlRendererTest {
         assertContains(html, "stop-opacity=\"0.32\"")
         assertContains(html, "renderTokenTrend(values, available, item.id)")
         assertContains(html, "stroke-width: 3")
-        assertContains(html, "max-width: 240px")
+        assertContains(html, "grid-template-columns: repeat(2, minmax(0, 1fr))")
+        assertContains(html, "max-width: 180px")
         assertContains(html, "height: 48px")
         assertContains(html, "--trend-green: #4bde80")
         assertContains(html, "horizontalPadding = 3.25")
@@ -131,7 +150,8 @@ class AgentDockHtmlRendererTest {
         assertFalse(html.contains("<polyline class=\"token-trend-line\""))
         assertFalse(html.contains("token-trend-baseline"))
         assertContains(html, "\"totalTokens\":4900000")
-        assertContains(html, "\"dailyTokens\":[0,10,40,15,18,12,16,9,22,12,8,20,14,11]")
+        assertContains(html, "\"dailyTokens\":[16,9,22,12,8,20,14]")
+        assertContains(html, "\"dailyAverageResponseMillis\":[null,null,null,2100,null,null,null]")
         assertFalse(html.contains("class=\"session-summary\""))
         assertFalse(html.contains(".session-summary"))
         assertFalse(html.contains("session-meta"))
