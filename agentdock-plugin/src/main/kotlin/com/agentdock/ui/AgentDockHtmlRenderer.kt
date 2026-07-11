@@ -780,7 +780,7 @@ object AgentDockHtmlRenderer {
                       ? "Historical total token usage: " + Math.round(total).toLocaleString("en-US")
                       : "Historical token usage unavailable";
                     return '<div class="session-token-usage" aria-label="Token usage">' +
-                      '<span class="session-token-label">Token 用量</span>' +
+                      '<span class="session-token-label">Token Usage</span>' +
                       '<span class="session-token-chart' + (available ? "" : " unavailable") + '">' + renderTokenTrend(values, available, item.id) + '</span>' +
                       '<span class="session-token-total" title="' + attr(totalTitle) + '">' + escapeHtml(totalLabel) + '</span>' +
                     '</div>';
@@ -796,7 +796,7 @@ object AgentDockHtmlRenderer {
                       ? "Today's average response time: " + formatResponseTime(today)
                       : "No response recorded today";
                     return '<div class="session-response-time" aria-label="Average response time">' +
-                      '<span class="session-response-label">平均响应</span>' +
+                      '<span class="session-response-label">Avg. Time</span>' +
                       '<span class="session-response-chart' + (available ? "" : " unavailable") + '">' + renderResponseTrend(values, available, item.id) + '</span>' +
                       '<span class="session-response-today" title="' + attr(todayTitle) + '">' + escapeHtml(todayLabel) + '</span>' +
                     '</div>';

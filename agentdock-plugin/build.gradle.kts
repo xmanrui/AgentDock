@@ -7,7 +7,7 @@ plugins {
 }
 
 group = "com.agentdock"
-version = "0.1.87"
+version = "0.1.88"
 
 repositories {
     maven("https://maven.aliyun.com/repository/public")
@@ -75,7 +75,7 @@ intellijPlatform {
         """.trimIndent()
 
         changeNotes = """
-            Aligns the AgentDock header with the search, filter, and session content edges.
+            Uses concise English labels for session token usage and average response time.
         """.trimIndent()
     }
 
