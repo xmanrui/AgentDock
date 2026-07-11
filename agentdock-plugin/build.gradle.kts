@@ -7,7 +7,7 @@ plugins {
 }
 
 group = "com.agentdock"
-version = "1.1.0"
+version = "1.2.0"
 
 repositories {
     maven("https://maven.aliyun.com/repository/public")
@@ -76,9 +76,9 @@ intellijPlatform {
 
         changeNotes = """
             <ul>
-                <li>Adds built-in Gemini CLI support for creating and resuming sessions.</li>
-                <li>Discovers project-scoped Gemini CLI history and displays local conversation previews.</li>
-                <li>Includes Gemini session token trends and average response-time metrics.</li>
+                <li>Adds a YOLO action beside Open for resuming sessions without permission prompts.</li>
+                <li>Uses the provider-specific bypass flags required by Codex, Claude Code, and Gemini CLI.</li>
+                <li>Adds configurable YOLO resume templates to provider settings.</li>
             </ul>
         """.trimIndent()
     }

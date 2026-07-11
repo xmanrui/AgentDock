@@ -34,4 +34,32 @@ class StateMigrationTest {
         assertEquals("Claude Code session a17b088f", state.sessions[1].name)
         assertEquals("Fix the UI.", state.sessions[1].summary)
     }
+
+    @Test
+    fun `adds provider specific yolo templates to version one settings`() {
+        val state = ProviderSettingsState(
+            schemaVersion = 1,
+            providers = CLIProvider.defaultProviders()
+                .map { it.copy(yoloResumeCommandTemplate = "") }
+                .toMutableList()
+        )
+
+        StateMigration.migrateProviderSettings(state)
+
+        val defaults = CLIProvider.defaultProviders().associate { it.id to it.yoloResumeCommandTemplate }
+        assertEquals(2, state.schemaVersion)
+        assertEquals(defaults, state.providers.associate { it.id to it.yoloResumeCommandTemplate })
+    }
+
+    @Test
+    fun `preserves intentionally disabled yolo template in current settings`() {
+        val codex = CLIProvider.defaultProviders()
+            .first { it.id == CLIProvider.CODEX_ID }
+            .copy(yoloResumeCommandTemplate = "")
+        val state = ProviderSettingsState(schemaVersion = 2, providers = mutableListOf(codex))
+
+        StateMigration.migrateProviderSettings(state)
+
+        assertEquals("", state.providers.first { it.id == CLIProvider.CODEX_ID }.yoloResumeCommandTemplate)
+    }
 }

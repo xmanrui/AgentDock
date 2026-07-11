@@ -140,7 +140,8 @@ class AgentDockPanel(
         return try {
             val json = parsePayload(payload)
             when (json.string("action")) {
-                "open" -> json.string("id")?.let { openSession(it) }
+                "open" -> json.string("id")?.let { openSession(it, yolo = false) }
+                "open-yolo" -> json.string("id")?.let { openSession(it, yolo = true) }
                 "pin" -> json.string("id")?.let { service.togglePin(it) }
                 "refresh" -> {
                     providerUsageService.invalidate()
@@ -179,10 +180,15 @@ class AgentDockPanel(
         }
     }
 
-    private fun openSession(sessionId: String) {
+    private fun openSession(sessionId: String, yolo: Boolean) {
         hideSessionPreview(immediate = true)
         runOnEdt {
-            handleResult(service.resumeSession(sessionId))
+            val result = if (yolo) {
+                service.resumeSessionYolo(sessionId)
+            } else {
+                service.resumeSession(sessionId)
+            }
+            handleResult(result)
             scheduleExclusiveRightToolWindowMode()
         }
     }

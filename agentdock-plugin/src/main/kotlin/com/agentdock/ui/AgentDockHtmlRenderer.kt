@@ -154,6 +154,18 @@ object AgentDockHtmlRenderer {
                   white-space: nowrap;
                 }
 
+                .session-action.yolo {
+                  color: var(--yellow);
+                  border-color: rgba(232, 183, 93, .32);
+                  background: rgba(232, 183, 93, .08);
+                }
+
+                .session-action.yolo:hover {
+                  color: #ffe0a0;
+                  border-color: rgba(232, 183, 93, .52);
+                  background: rgba(232, 183, 93, .14);
+                }
+
                 .provider-filters {
                   display: grid;
                   grid-template-columns: minmax(0, 1fr) auto;
@@ -885,6 +897,7 @@ object AgentDockHtmlRenderer {
                         '<div class="session-time" title="' + attr(item.updatedLabel) + '">' + escapeHtml(item.updatedLabel) + '</div>' +
                         '<div class="session-actions">' +
                           '<button class="session-action" data-action="open" data-id="' + attr(item.id) + '">Open</button>' +
+                          '<button class="session-action yolo" data-action="open-yolo" data-id="' + attr(item.id) + '" title="Open in YOLO mode (bypasses permission checks)" aria-label="Open session in YOLO mode">YOLO</button>' +
                           '<button class="session-action" data-action="pin" data-id="' + attr(item.id) + '">' + (item.pinned ? "Unpin" : "Pin") + '</button>' +
                         '</div>' +
                       '</div>' +

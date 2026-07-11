@@ -7,6 +7,7 @@ data class CLIProvider(
     var detectCommand: String = "",
     var startCommandTemplate: String = "",
     var resumeCommandTemplate: String = "",
+    var yoloResumeCommandTemplate: String = "",
     var supportsSessionId: Boolean = true,
     var supportsImport: Boolean = false,
     var enabled: Boolean = true
@@ -24,6 +25,7 @@ data class CLIProvider(
                 detectCommand = "codex --version",
                 startCommandTemplate = "{{executable}}",
                 resumeCommandTemplate = "{{executable}} resume {{providerSessionId?}}",
+                yoloResumeCommandTemplate = "{{executable}} resume --dangerously-bypass-approvals-and-sandbox {{providerSessionId?}}",
                 supportsSessionId = true,
                 supportsImport = false,
                 enabled = true
@@ -35,6 +37,7 @@ data class CLIProvider(
                 detectCommand = "claude --version",
                 startCommandTemplate = "{{executable}} --ide --name {{sessionName}}",
                 resumeCommandTemplate = "{{executable}} --resume {{providerSessionId?}} --ide",
+                yoloResumeCommandTemplate = "{{executable}} --resume {{providerSessionId?}} --ide --dangerously-skip-permissions",
                 supportsSessionId = true,
                 supportsImport = false,
                 enabled = true
@@ -46,6 +49,7 @@ data class CLIProvider(
                 detectCommand = "gemini --version",
                 startCommandTemplate = "{{executable}}",
                 resumeCommandTemplate = "{{executable}} --resume {{providerSessionId?}}",
+                yoloResumeCommandTemplate = "{{executable}} --resume {{providerSessionId?}} --yolo",
                 supportsSessionId = true,
                 supportsImport = true,
                 enabled = true

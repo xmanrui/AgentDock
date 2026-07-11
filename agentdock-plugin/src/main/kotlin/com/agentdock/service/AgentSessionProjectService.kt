@@ -156,12 +156,33 @@ class AgentSessionProjectService(private val project: Project) : PersistentState
     fun resumeSession(
         sessionId: String,
         terminalLauncher: TerminalLauncher = JetBrainsTerminalLauncher(project)
+    ): AgentSessionOperationResult = resumeSessionWithMode(sessionId, ResumeMode.Standard, terminalLauncher)
+
+    fun resumeSessionYolo(
+        sessionId: String,
+        terminalLauncher: TerminalLauncher = JetBrainsTerminalLauncher(project)
+    ): AgentSessionOperationResult = resumeSessionWithMode(sessionId, ResumeMode.Yolo, terminalLauncher)
+
+    private fun resumeSessionWithMode(
+        sessionId: String,
+        mode: ResumeMode,
+        terminalLauncher: TerminalLauncher
     ): AgentSessionOperationResult {
         val session = repository.find(sessionId)
             ?: return AgentSessionOperationResult.Failure(null, "Session not found: $sessionId")
         val registry = CLIProviderRegistry()
         val provider = registry.getProvider(session.providerId)
             ?: return markFailure(session, "Unknown provider: ${session.providerId}")
+        val commandTemplate = when (mode) {
+            ResumeMode.Standard -> provider.resumeCommandTemplate
+            ResumeMode.Yolo -> provider.yoloResumeCommandTemplate
+        }
+        if (commandTemplate.isBlank()) {
+            val modeLabel = if (mode == ResumeMode.Yolo) "YOLO resume" else "Resume"
+            val message = "$modeLabel command is not configured for ${provider.displayName}."
+            AgentDockNotifications.warning(project, "$modeLabel unavailable", message)
+            return AgentSessionOperationResult.Failure(session, message)
+        }
 
         val detection = registry.detect(provider.id)
         if (detection !is ProviderDetectionResult.Available) {
@@ -176,7 +197,7 @@ class AgentSessionProjectService(private val project: Project) : PersistentState
         return launchSessionCommand(
             session,
             provider.copy(executable = detection.executablePath),
-            provider.resumeCommandTemplate,
+            commandTemplate,
             terminalLauncher
         )
     }
@@ -435,5 +456,10 @@ class AgentSessionProjectService(private val project: Project) : PersistentState
 
         fun getInstance(project: Project): AgentSessionProjectService =
             project.getService(AgentSessionProjectService::class.java)
+    }
+
+    private enum class ResumeMode {
+        Standard,
+        Yolo
     }
 }

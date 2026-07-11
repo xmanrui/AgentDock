@@ -36,6 +36,7 @@ object StateMigration {
     }
 
     fun migrateProviderSettings(state: ProviderSettingsState): ProviderSettingsState {
+        val needsYoloTemplateMigration = state.schemaVersion < 2
         if (state.schemaVersion <= 0) {
             state.schemaVersion = 1
         }
@@ -49,14 +50,19 @@ object StateMigration {
         state.providers.removeAll { it.id !in supportedProviderIds }
         state.providers.forEach { provider ->
             val defaultsForProvider = defaults.firstOrNull { it.id == provider.id } ?: return@forEach
-            val legacy = legacyTemplates[provider.id] ?: return@forEach
-            if (provider.startCommandTemplate == legacy.start) {
-                provider.startCommandTemplate = defaultsForProvider.startCommandTemplate
+            legacyTemplates[provider.id]?.let { legacy ->
+                if (provider.startCommandTemplate == legacy.start) {
+                    provider.startCommandTemplate = defaultsForProvider.startCommandTemplate
+                }
+                if (provider.resumeCommandTemplate == legacy.resume) {
+                    provider.resumeCommandTemplate = defaultsForProvider.resumeCommandTemplate
+                }
             }
-            if (provider.resumeCommandTemplate == legacy.resume) {
-                provider.resumeCommandTemplate = defaultsForProvider.resumeCommandTemplate
+            if (needsYoloTemplateMigration && provider.yoloResumeCommandTemplate.isBlank()) {
+                provider.yoloResumeCommandTemplate = defaultsForProvider.yoloResumeCommandTemplate
             }
         }
+        state.schemaVersion = maxOf(state.schemaVersion, 2)
         return state
     }
 

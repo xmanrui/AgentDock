@@ -3,6 +3,7 @@ package com.agentdock.ui
 import kotlin.test.Test
 import kotlin.test.assertContains
 import kotlin.test.assertFalse
+import kotlin.test.assertTrue
 
 class AgentDockHtmlRendererTest {
     @Test
@@ -105,6 +106,9 @@ class AgentDockHtmlRendererTest {
         assertContains(html, "刷新会话")
         assertContains(html, "if (composingSearch)")
         assertContains(html, "Open")
+        assertContains(html, "YOLO")
+        assertContains(html, "data-action=\"open-yolo\"")
+        assertContains(html, "bypasses permission checks")
         assertContains(html, "Pin")
         assertContains(html, "session-time")
         assertContains(html, "Token Usage")
@@ -195,5 +199,7 @@ class AgentDockHtmlRendererTest {
         assertFalse(html.contains("Codex ready"))
         assertFalse(html.contains("Claude Code ready"))
         assertFalse(html.contains("minmax(0, 1fr) 44px"))
+        assertTrue(html.indexOf("data-action=\"open\"") < html.indexOf("data-action=\"open-yolo\""))
+        assertTrue(html.indexOf("data-action=\"open-yolo\"") < html.indexOf("data-action=\"pin\""))
     }
 }

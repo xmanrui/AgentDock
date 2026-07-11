@@ -83,9 +83,34 @@ class CommandRendererTest {
         assertEquals("cd '/tmp/project with spaces'", result.command)
     }
 
-    private fun context(session: AgentSession): ProviderCommandContext {
+    @Test
+    fun `renders provider specific yolo resume commands`() {
+        val expectedCommands = mapOf(
+            CLIProvider.CODEX_ID to "codex resume --dangerously-bypass-approvals-and-sandbox session-123",
+            CLIProvider.CLAUDE_CODE_ID to "claude --resume session-123 --ide --dangerously-skip-permissions",
+            CLIProvider.GEMINI_ID to "gemini --resume session-123 --yolo"
+        )
+
+        CLIProvider.defaultProviders().forEach { currentProvider ->
+            val session = AgentSession(
+                name = "YOLO test",
+                providerId = currentProvider.id,
+                cwd = "/tmp/project",
+                providerSessionId = "session-123"
+            )
+            val result = CommandRenderer().render(
+                currentProvider.yoloResumeCommandTemplate,
+                context(session, currentProvider)
+            )
+
+            assertIs<CommandRenderResult.Success>(result)
+            assertEquals(expectedCommands.getValue(currentProvider.id), result.command)
+        }
+    }
+
+    private fun context(session: AgentSession, currentProvider: CLIProvider = provider): ProviderCommandContext {
         return ProviderCommandContext(
-            provider = provider,
+            provider = currentProvider,
             session = session,
             projectPath = "/tmp/project",
             shell = "/bin/zsh",
