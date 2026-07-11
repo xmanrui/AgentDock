@@ -7,7 +7,7 @@ plugins {
 }
 
 group = "com.agentdock"
-version = "0.1.88"
+version = "1.0.0"
 
 repositories {
     maven("https://maven.aliyun.com/repository/public")
@@ -75,7 +75,7 @@ intellijPlatform {
         """.trimIndent()
 
         changeNotes = """
-            Uses concise English labels for session token usage and average response time.
+            AgentDock 1.0.0 marks the first stable release.
         """.trimIndent()
     }
 

@@ -224,7 +224,7 @@ See the [AgentDock Privacy Policy](PRIVACY.md) for complete details.
 ### Known Limitations
 
 - AgentDock currently includes built-in support only for Codex and Claude Code.
-- Gemini CLI, OpenCode, Junie, and other providers are outside the scope of v0.1.
+- Gemini CLI, OpenCode, Junie, and other providers are outside the scope of v1.0.
 - CLI processes are not guaranteed to remain alive after the IDE is closed.
 - `providerSessionId` may need to be entered manually when creating a session.
 - File and folder context-menu launching, Terminal tab binding, and session detail pages are planned for future releases.
