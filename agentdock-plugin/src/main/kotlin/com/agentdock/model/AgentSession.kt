@@ -17,5 +17,13 @@ data class AgentSession(
     var updatedAt: Long = 0L,
     var pinned: Boolean = false,
     var archived: Boolean = false,
-    var lastError: String? = null
+    var lastError: String? = null,
+    var tokenUsageCached: Boolean = false,
+    var tokenUsageAvailable: Boolean = false,
+    var tokenUsageTotal: Long = 0L,
+    var tokenUsageDaily: MutableList<Long> = mutableListOf(),
+    var tokenUsageSourcePath: String = "",
+    var tokenUsageSourceModifiedAt: Long = 0L,
+    var tokenUsageSourceLength: Long = 0L,
+    var tokenUsageAnchorEpochDay: Long = 0L
 )

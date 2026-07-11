@@ -8,7 +8,9 @@ import com.agentdock.service.AgentSessionOperationResult
 import com.agentdock.service.AgentSessionProjectService
 import com.agentdock.service.CLIProviderRegistry
 import com.agentdock.service.LocalSessionContentService
+import com.agentdock.service.LocalSessionTokenUsageService
 import com.agentdock.service.ProviderUsageService
+import com.agentdock.service.SessionTokenUsage
 import com.agentdock.util.SessionTextSanitizer
 import com.agentdock.util.TimeFormatter
 import com.google.gson.JsonObject
@@ -62,6 +64,7 @@ class AgentDockPanel(
     }
     private val refreshInFlight = AtomicBoolean(false)
     private val sessionContentService = LocalSessionContentService()
+    private val sessionTokenUsageService = LocalSessionTokenUsageService(sessionContentService)
     private val providerUsageService = ProviderUsageService()
     private val previewRequestVersion = AtomicLong(0)
     private val providerUsageRequestVersion = AtomicLong(0)
@@ -294,12 +297,22 @@ class AgentDockPanel(
         if (!refreshInFlight.compareAndSet(false, true)) return
         ApplicationManager.getApplication().executeOnPooledThread {
             try {
+                refreshKnownTokenUsage()
+                pushState()
                 pushState(forceDiscovery = true)
+                refreshKnownTokenUsage()
+                pushState()
             } catch (error: Throwable) {
                 pushError(error)
             } finally {
                 refreshInFlight.set(false)
             }
+        }
+    }
+
+    private fun refreshKnownTokenUsage() {
+        service.listSessions(includeArchived = true, discover = false).forEach { session ->
+            sessionTokenUsageService.load(session)
         }
     }
 
@@ -361,8 +374,13 @@ class AgentDockPanel(
         }
         val providerList = providerRegistry.listProviders()
         val providers = providerList.associateBy { it.id }
-        val sessions = service.listSessions(includeArchived = true, discover = false)
-            .map { session -> session.toViewItem(providers[session.providerId]) }
+        val sessionList = service.listSessions(includeArchived = true, discover = false)
+        val sessions = sessionList.map { session ->
+            session.toViewItem(
+                provider = providers[session.providerId],
+                tokenUsage = sessionTokenUsageService.cached(session)
+            )
+        }
         val count = service.listSessions(includeArchived = false, discover = false).size
         updateToolWindowPresentation(count)
         return AgentDockHtmlRenderer.ViewState(
@@ -377,7 +395,10 @@ class AgentDockPanel(
         )
     }
 
-    private fun AgentSession.toViewItem(provider: CLIProvider?): AgentDockHtmlRenderer.SessionItem {
+    private fun AgentSession.toViewItem(
+        provider: CLIProvider?,
+        tokenUsage: SessionTokenUsage
+    ): AgentDockHtmlRenderer.SessionItem {
         val displayStatus = if (archived) AgentSessionStatus.Archived else status
         val title = SessionTextSanitizer.title(name, fallbackName(providerSessionId))
         val summary = SessionTextSanitizer.summary(summary)
@@ -389,6 +410,8 @@ class AgentDockPanel(
             providerName = provider?.displayName ?: providerId,
             title = title,
             summary = summary,
+            totalTokens = tokenUsage.totalTokens,
+            dailyTokens = tokenUsage.dailyTokens,
             statusKey = displayStatus.statusKey(),
             statusLabel = displayStatus.statusLabel(),
             terminalOpen = service.isTerminalOpen(id),

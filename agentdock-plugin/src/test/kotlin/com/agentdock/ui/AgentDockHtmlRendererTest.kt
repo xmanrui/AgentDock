@@ -21,6 +21,8 @@ class AgentDockHtmlRendererTest {
                         providerName = "Codex",
                         title = "Match the prototype page.",
                         summary = "Match the prototype page.",
+                        totalTokens = 4_900_000,
+                        dailyTokens = listOf(0, 10, 40, 15, 18, 12, 16, 9, 22, 12, 8, 20, 14, 11),
                         statusKey = "restorable",
                         statusLabel = "Restorable",
                         terminalOpen = false,
@@ -96,6 +98,42 @@ class AgentDockHtmlRendererTest {
         assertContains(html, "Open")
         assertContains(html, "Pin")
         assertContains(html, "session-time")
+        assertContains(html, "Token 用量")
+        assertContains(html, "session-token-usage")
+        assertContains(html, "renderTokenTrend")
+        assertContains(html, "14-day token usage")
+        assertContains(html, "Historical total token usage")
+        assertContains(html, "formatTokenCount")
+        assertContains(html, "token-trend-marker")
+        assertContains(html, "var values = dailyValues")
+        assertContains(html, "data-point-count")
+        assertContains(html, "var markers = available ? points.map")
+        assertContains(html, "tokenTrendGradientId")
+        assertContains(html, "tokenTrendCurveSegments")
+        assertContains(html, "midpointX")
+        assertContains(html, "data-segment-count")
+        assertContains(html, "<path class=\"token-trend-line\"")
+        assertContains(html, "token-trend-area")
+        assertContains(html, "linearGradient")
+        assertContains(html, "stop-opacity=\"0.32\"")
+        assertContains(html, "renderTokenTrend(values, available, item.id)")
+        assertContains(html, "stroke-width: 3")
+        assertContains(html, "max-width: 240px")
+        assertContains(html, "height: 48px")
+        assertContains(html, "--trend-green: #4bde80")
+        assertContains(html, "horizontalPadding = 3.25")
+        assertContains(html, "width: 4px")
+        assertFalse(html.contains("width: 6px"))
+        assertFalse(html.contains("tokenTrendBuckets"))
+        assertFalse(html.contains("index += 2"))
+        assertFalse(html.contains("markerIndexes = [1, 2, 3, 5]"))
+        assertFalse(html.contains("markerCandidates"))
+        assertFalse(html.contains("<polyline class=\"token-trend-line\""))
+        assertFalse(html.contains("token-trend-baseline"))
+        assertContains(html, "\"totalTokens\":4900000")
+        assertContains(html, "\"dailyTokens\":[0,10,40,15,18,12,16,9,22,12,8,20,14,11]")
+        assertFalse(html.contains("class=\"session-summary\""))
+        assertFalse(html.contains(".session-summary"))
         assertFalse(html.contains("session-meta"))
         assertFalse(html.contains("providerName) + ' · '"))
         assertFalse(html.contains("data-status"))

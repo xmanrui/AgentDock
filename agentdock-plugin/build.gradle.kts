@@ -7,7 +7,7 @@ plugins {
 }
 
 group = "com.agentdock"
-version = "0.1.65"
+version = "0.1.74"
 
 repositories {
     maven("https://maven.aliyun.com/repository/public")
@@ -75,7 +75,7 @@ intellijPlatform {
         """.trimIndent()
 
         changeNotes = """
-            Adds balanced chat avatars for provider replies and right-aligned user questions in session previews.
+            Replaces session summaries with per-session historical token totals and a reference-matched 14-day usage trend.
         """.trimIndent()
     }
 
