@@ -484,8 +484,8 @@ internal object TerminalStreamBubbleGeometry {
         val gifTitleGap = JBUI.scale(2)
         val maximumGifHeight = (
             anchor.topY - margin - boxHeight - arrowHeight - gifBubbleGap - gifTitleGap
-            ).coerceAtLeast(0).coerceAtMost(JBUI.scale(52))
-        val maximumGifWidth = minOf(boxWidth, JBUI.scale(64))
+            ).coerceAtLeast(0).coerceAtMost(JBUI.scale(104))
+        val maximumGifWidth = minOf(boxWidth, JBUI.scale(128))
         val scaledGifSize = gifSize?.scaleToFit(maximumGifWidth, maximumGifHeight)
         val gifWidth = scaledGifSize?.width ?: 0
         val gifHeight = scaledGifSize?.height ?: 0

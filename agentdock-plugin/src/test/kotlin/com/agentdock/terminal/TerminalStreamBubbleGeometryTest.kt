@@ -1,5 +1,6 @@
 package com.agentdock.terminal
 
+import com.intellij.util.ui.JBUI
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertTrue
@@ -62,6 +63,8 @@ class TerminalStreamBubbleGeometryTest {
         )
 
         assertTrue(layout.hasGif)
+        assertEquals(JBUI.scale(96), layout.gifWidth)
+        assertEquals(JBUI.scale(104), layout.gifHeight)
         assertTrue(layout.arrowTipY < layout.gifY)
         assertTrue(layout.gifY + layout.gifHeight < anchor.topY)
         assertEquals(anchor.centerX, layout.gifX + layout.gifWidth / 2)
