@@ -35,10 +35,35 @@ let usageAnchor: HTMLElement | undefined;
 let hidePreviewTimer: number | undefined;
 let hideUsageTimer: number | undefined;
 let toastTimer: number | undefined;
+let keyboardNavigation = false;
 
 const style = document.createElement("style");
 style.textContent = dashboardStyles;
 document.head.append(style);
+
+window.addEventListener("keydown", (event) => {
+  if (event.key === "Tab") keyboardNavigation = true;
+}, true);
+window.addEventListener("pointerdown", () => {
+  keyboardNavigation = false;
+}, true);
+window.addEventListener("pointermove", (event) => {
+  if (!activeUsageId) return;
+  const target = event.target;
+  const withinUsageSurface = target instanceof Element
+    && (target.closest(".usage-popup") !== null || target.closest(".filter-button[data-provider-id]") !== null);
+  if (withinUsageSurface) {
+    if (hideUsageTimer !== undefined) window.clearTimeout(hideUsageTimer);
+  } else {
+    scheduleHideUsage();
+  }
+}, true);
+window.addEventListener("blur", () => {
+  if (activeUsageId) scheduleHideUsage();
+});
+document.addEventListener("pointerleave", () => {
+  if (activeUsageId) scheduleHideUsage();
+});
 
 window.addEventListener("message", (event: MessageEvent<ExtensionToWebviewMessage>) => {
   const message = event.data;
@@ -143,24 +168,32 @@ function filterButton(id: "all", label: string, count: number): HTMLButtonElemen
 }
 
 function providerFilterButton(provider: DashboardProviderView, count: number): HTMLButtonElement {
-  const control = button("", () => {
-    providerFilter = provider.id;
-    render();
-    requestAnimationFrame(() => {
-      document.querySelector<HTMLButtonElement>(`.filter-button[data-provider-id="${provider.id}"]`)?.focus();
-    });
-  }, `filter-button${providerFilter === provider.id ? " active" : ""}`);
+  const control = button("", () => selectProvider(provider.id), `filter-button${providerFilter === provider.id ? " active" : ""}`);
   control.dataset.providerId = provider.id;
   control.append(providerImage(provider, "provider-logo"));
   control.title = `${provider.displayName} (${count})`;
   control.setAttribute("aria-label", `${provider.displayName}, ${count} sessions`);
   control.setAttribute("aria-pressed", String(providerFilter === provider.id));
+  control.addEventListener("pointerdown", (event) => {
+    if (event.button !== 0) return;
+    event.preventDefault();
+    event.stopPropagation();
+    selectProvider(provider.id);
+  });
   control.addEventListener("pointerenter", () => showUsage(provider.id, control));
   control.addEventListener("pointerleave", scheduleHideUsage);
   control.addEventListener("focus", () => showUsage(provider.id, control));
   control.addEventListener("blur", scheduleHideUsage);
   if (activeUsageId === provider.id) usageAnchor = control;
   return control;
+}
+
+function selectProvider(providerId: ProviderId): void {
+  providerFilter = providerId;
+  render();
+  requestAnimationFrame(() => {
+    document.querySelector<HTMLButtonElement>(`.filter-button[data-provider-id="${providerId}"]`)?.focus();
+  });
 }
 
 function filteredSessions(): SessionCardView[] {
@@ -177,8 +210,16 @@ function sessionCard(session: SessionCardView): HTMLElement {
   card.dataset.sessionId = session.id;
   const provider = providerFor(session.providerId);
   const header = element("header", "session-header");
-  if (provider) header.append(providerImage(provider, "session-provider-logo"));
-  else header.append(element("span", "session-provider-logo"));
+  const providerState = element("span", `session-provider-state ${session.taskState}`);
+  providerState.title = terminalTaskStateLabel(session.taskState);
+  providerState.setAttribute("role", "img");
+  providerState.setAttribute("aria-label", providerState.title);
+  if (provider) {
+    const image = providerImage(provider, "session-provider-logo");
+    image.alt = "";
+    providerState.append(image);
+  }
+  header.append(providerState);
   const title = element("div", "session-title");
   title.textContent = session.name;
   title.title = session.name;
@@ -190,11 +231,6 @@ function sessionCard(session: SessionCardView): HTMLElement {
   title.addEventListener("blur", scheduleHidePreview);
   if (activePreviewId === session.id) previewAnchor = title;
   const status = element("div", "session-state");
-  if (session.taskState !== "idle") {
-    const label = element("span", `task-label ${session.taskState}`);
-    label.textContent = session.taskState === "working" ? "Working" : "Ready";
-    status.append(label);
-  }
   const dot = element("span", `terminal-dot${session.terminalOpen ? " open" : ""}`);
   dot.title = session.terminalOpen ? "AgentDock terminal open" : "No active AgentDock terminal";
   dot.setAttribute("role", "img");
@@ -214,16 +250,6 @@ function sessionCard(session: SessionCardView): HTMLElement {
   );
 
   card.append(header, metrics);
-  if (session.taskState === "working" && session.liveText) {
-    const live = element("div", "live-output");
-    const track = element("div", "live-track");
-    const text = element("span", "live-text");
-    text.textContent = session.liveText;
-    track.append(text);
-    live.append(track);
-    live.title = session.liveText;
-    card.append(live);
-  }
 
   const footer = element("footer", "session-footer");
   const updated = element("time", "updated");
@@ -233,7 +259,9 @@ function sessionCard(session: SessionCardView): HTMLElement {
   const yolo = button("YOLO", () => vscode.postMessage({ type: "open-session", sessionId: session.id, yolo: true }), "action-button yolo");
   yolo.title = "Open with provider-specific permission bypass flags";
   const pin = button(session.pinned ? "Unpin" : "Pin", () => vscode.postMessage({ type: "toggle-pin", sessionId: session.id }), "action-button");
-  footer.append(updated, open, yolo, pin);
+  const actions = element("div", "session-actions");
+  actions.append(open, yolo, pin);
+  footer.append(updated, actions);
   card.append(footer);
   return card;
 }
@@ -249,85 +277,97 @@ function metric(label: string, rawValues: readonly (number | null)[], value: str
   return container;
 }
 
-function sparkline(rawValues: readonly (number | null)[], available: boolean, label: string): SVGSVGElement {
-  const values = Array.from({ length: 7 }, (_, index) => Math.max(0, rawValues[index] ?? 0));
+function sparkline(rawValues: readonly (number | null)[], available: boolean, label: string): HTMLElement {
+  const width = 240;
+  const height = 48;
+  const horizontalPadding = 3.25;
+  const topPadding = 8;
+  const bottomPadding = 5;
+  const normalizedValues = rawValues.slice(-7);
+  const paddedValues = Array.from<(number | null)>({ length: Math.max(0, 7 - normalizedValues.length) }).fill(null).concat(normalizedValues);
+  const entries = paddedValues.map((rawValue, index) => {
+    const numericValue = rawValue === null || rawValue === undefined ? Number.NaN : Number(rawValue);
+    const hasData = Number.isFinite(numericValue);
+    return { index, value: hasData ? Math.max(0, numericValue) : 0, hasData };
+  });
+  const valuesWithData = entries.filter((entry) => entry.hasData);
+  const maximum = valuesWithData.length ? Math.max(...valuesWithData.map((entry) => entry.value)) : 0;
+  const points = available && valuesWithData.length
+    ? entries.map((entry) => ({
+        x: horizontalPadding + entry.index * ((width - horizontalPadding * 2) / Math.max(1, entries.length - 1)),
+        y: maximum > 0
+          ? height - bottomPadding - entry.value * ((height - topPadding - bottomPadding) / maximum)
+          : height / 2,
+        hasData: entry.hasData
+      }))
+    : [
+        { x: horizontalPadding, y: height / 2, hasData: false },
+        { x: width - horizontalPadding, y: height / 2, hasData: false }
+      ];
+  const pathData = metricTrendPath(points);
+  const baselineY = height - bottomPadding;
+  const wrapper = element("span", `sparkline${available ? "" : " unavailable"}`);
   const svg = document.createElementNS("http://www.w3.org/2000/svg", "svg");
-  svg.classList.add("sparkline");
-  svg.setAttribute("viewBox", "0 0 150 43");
+  svg.setAttribute("viewBox", `0 0 ${width} ${height}`);
+  svg.setAttribute("preserveAspectRatio", "none");
   svg.setAttribute("role", "img");
-  svg.setAttribute("aria-label", `${label}, oldest to today: ${values.join(", ")}`);
-  const points = chartPoints(values);
-  const pathData = smoothPath(points);
+  svg.setAttribute("data-point-count", String(points.length));
+  const ariaLabel = `${label}, oldest to today: ${entries.map((entry) => entry.hasData ? entry.value : "No data").join(", ")}`;
+  svg.setAttribute("aria-label", ariaLabel);
+  const title = document.createElementNS(svg.namespaceURI, "title");
+  title.textContent = ariaLabel;
+  svg.append(title);
   const gradientId = `gradient-${Math.random().toString(36).slice(2)}`;
   const defs = document.createElementNS(svg.namespaceURI, "defs");
   const gradient = document.createElementNS(svg.namespaceURI, "linearGradient");
   gradient.id = gradientId;
+  gradient.setAttribute("gradientUnits", "userSpaceOnUse");
   gradient.setAttribute("x1", "0");
-  gradient.setAttribute("y1", "0");
+  gradient.setAttribute("y1", String(topPadding));
   gradient.setAttribute("x2", "0");
-  gradient.setAttribute("y2", "1");
+  gradient.setAttribute("y2", String(baselineY));
   const top = document.createElementNS(svg.namespaceURI, "stop");
-  top.setAttribute("offset", "0");
-  top.setAttribute("stop-color", "var(--ad-accent)");
-  top.setAttribute("stop-opacity", available ? ".24" : "0");
+  top.setAttribute("offset", "0%");
+  top.setAttribute("stop-color", "#4bde80");
+  top.setAttribute("stop-opacity", available && maximum > 0 ? ".32" : "0");
   const bottom = document.createElementNS(svg.namespaceURI, "stop");
-  bottom.setAttribute("offset", "1");
-  bottom.setAttribute("stop-color", "var(--ad-accent)");
+  bottom.setAttribute("offset", "100%");
+  bottom.setAttribute("stop-color", "#4bde80");
   bottom.setAttribute("stop-opacity", "0");
   gradient.append(top, bottom);
   defs.append(gradient);
   svg.append(defs);
-  if (available) {
+  if (available && maximum > 0 && points.length > 1) {
     const area = document.createElementNS(svg.namespaceURI, "path");
-    area.setAttribute("d", `${pathData} L ${points.at(-1)?.x ?? 145} 39 L ${points[0]?.x ?? 5} 39 Z`);
+    area.classList.add("sparkline-area");
+    area.setAttribute("d", `M ${points[0]?.x.toFixed(2) ?? horizontalPadding} ${baselineY.toFixed(2)} L ${pathData.slice(2)} L ${points.at(-1)?.x.toFixed(2) ?? width - horizontalPadding} ${baselineY.toFixed(2)} Z`);
     area.setAttribute("fill", `url(#${gradientId})`);
     svg.append(area);
   }
   const line = document.createElementNS(svg.namespaceURI, "path");
+  line.classList.add("sparkline-line");
   line.setAttribute("d", pathData);
-  line.setAttribute("fill", "none");
-  line.setAttribute("stroke", available ? "var(--ad-accent)" : "var(--ad-muted)");
-  line.setAttribute("stroke-opacity", available ? "1" : ".55");
-  line.setAttribute("stroke-width", available ? "2" : "1.2");
-  line.setAttribute("stroke-linecap", "round");
-  line.setAttribute("stroke-linejoin", "round");
-  if (!available) line.setAttribute("stroke-dasharray", "3 3");
   svg.append(line);
-  points.forEach((point, index) => {
-    const dot = document.createElementNS(svg.namespaceURI, "circle");
-    dot.setAttribute("cx", String(point.x));
-    dot.setAttribute("cy", String(point.y));
-    dot.setAttribute("r", available ? "1.7" : "1.2");
-    dot.setAttribute("fill", available ? "var(--ad-accent)" : "var(--ad-muted)");
-    dot.setAttribute("fill-opacity", rawValues[index] === null ? ".38" : "1");
-    svg.append(dot);
+  wrapper.append(svg);
+  if (available) points.forEach((point) => {
+    const marker = element("span", `sparkline-marker${point.hasData ? "" : " missing"}`);
+    marker.style.left = `${(point.x * 100 / width).toFixed(2)}%`;
+    marker.style.top = `${(point.y * 100 / height).toFixed(2)}%`;
+    marker.setAttribute("aria-hidden", "true");
+    wrapper.append(marker);
   });
-  return svg;
+  return wrapper;
 }
 
-function chartPoints(values: readonly number[]): Array<{ x: number; y: number }> {
-  const maximum = Math.max(...values);
-  const minimum = Math.min(...values);
-  const range = maximum - minimum;
-  return values.map((value, index) => ({
-    x: 5 + index * (140 / Math.max(1, values.length - 1)),
-    y: range === 0 ? 31 : 36 - ((value - minimum) / range) * 29
-  }));
-}
-
-function smoothPath(points: readonly { x: number; y: number }[]): string {
+function metricTrendPath(points: readonly { x: number; y: number }[]): string {
   if (!points.length) return "";
-  let path = `M ${points[0]?.x ?? 0} ${points[0]?.y ?? 0}`;
-  for (let index = 0; index < points.length - 1; index += 1) {
-    const previous = points[Math.max(0, index - 1)] ?? points[index];
+  let path = `M ${points[0]?.x.toFixed(2) ?? "0"} ${points[0]?.y.toFixed(2) ?? "0"}`;
+  for (let index = 1; index < points.length; index += 1) {
+    const previous = points[index - 1];
     const current = points[index];
-    const next = points[index + 1];
-    const after = points[Math.min(points.length - 1, index + 2)] ?? next;
-    if (!previous || !current || !next || !after) continue;
-    const tension = 0.18;
-    const control1 = { x: current.x + (next.x - previous.x) * tension, y: current.y + (next.y - previous.y) * tension };
-    const control2 = { x: next.x - (after.x - current.x) * tension, y: next.y - (after.y - current.y) * tension };
-    path += ` C ${control1.x} ${clamp(control1.y, 5, 38)}, ${control2.x} ${clamp(control2.y, 5, 38)}, ${next.x} ${next.y}`;
+    if (!previous || !current) continue;
+    const midpointX = (previous.x + current.x) / 2;
+    path += ` C ${midpointX.toFixed(2)} ${previous.y.toFixed(2)} ${midpointX.toFixed(2)} ${current.y.toFixed(2)} ${current.x.toFixed(2)} ${current.y.toFixed(2)}`;
   }
   return path;
 }
@@ -411,26 +451,27 @@ function showUsage(providerId: ProviderId, anchor: HTMLElement): void {
 function scheduleHideUsage(): void {
   if (hideUsageTimer !== undefined) window.clearTimeout(hideUsageTimer);
   hideUsageTimer = window.setTimeout(() => {
+    const popup = overlayRoot.querySelector<HTMLElement>(".usage-popup");
+    if (usageAnchor?.matches(":hover") || popup?.matches(":hover") || (keyboardNavigation && document.activeElement === usageAnchor)) return;
     activeUsageId = undefined;
     usageAnchor = undefined;
     removePopup("usage-popup");
+    setUsagePopupActive(false);
+    vscode.postMessage({ type: "reset-view-heading" });
   }, 220);
 }
 
 function renderUsagePopup(): void {
   removePopup("usage-popup");
+  setUsagePopupActive(false);
   const provider = state.providers.find((candidate) => candidate.id === activeUsageId);
-  if (!provider || !usageAnchor) return;
+  if (!provider || !usageAnchor) {
+    vscode.postMessage({ type: "reset-view-heading" });
+    return;
+  }
   const popup = element("section", "popup usage-popup");
-  const header = element("header", "usage-header");
-  header.append(providerImage(provider, "provider-logo"));
-  const heading = document.createElement("strong");
-  heading.textContent = "Usage";
-  header.append(heading);
   const usage = providerUsage.get(provider.id);
-  if (usage?.projectTokenTotal !== null && usage?.projectTokenTotal !== undefined) header.append(pill(`${formatCompact(usage.projectTokenTotal)} tokens`));
-  if (usage?.resetCount !== undefined) header.append(pill(`${usage.resetCount} ${usage.resetCount === 1 ? "reset" : "resets"}`));
-  popup.append(header);
+  updateUsageViewHeading(usage);
   if (!usage) {
     popup.append(notice("Loading usage limits...", "usage-message"));
   } else if (usage.status !== "available" || (!usage.fiveHour && !usage.weekly)) {
@@ -443,8 +484,33 @@ function renderUsagePopup(): void {
     if (hideUsageTimer !== undefined) window.clearTimeout(hideUsageTimer);
   });
   popup.addEventListener("pointerleave", scheduleHideUsage);
+  popup.style.visibility = "hidden";
   overlayRoot.append(popup);
+  setUsagePopupActive(true);
   positionPopup(popup, usageAnchor, "above");
+  popup.style.visibility = "visible";
+}
+
+function updateUsageViewHeading(usage: ProviderUsageView | undefined): void {
+  if (!usage) {
+    vscode.postMessage({ type: "show-usage-heading", details: "Loading..." });
+    return;
+  }
+  const details: string[] = [];
+  if (usage.projectTokenTotal !== null && usage.projectTokenTotal !== undefined) {
+    details.push(`${formatCompact(usage.projectTokenTotal)} tokens`);
+  }
+  if (usage.resetCount !== undefined) {
+    details.push(`${usage.resetCount} ${usage.resetCount === 1 ? "reset" : "resets"}`);
+  }
+  vscode.postMessage({
+    type: "show-usage-heading",
+    details: details.join(" · ") || "Limits unavailable"
+  });
+}
+
+function setUsagePopupActive(active: boolean): void {
+  document.querySelector<HTMLElement>(".toolbar")?.classList.toggle("usage-popup-active", active);
 }
 
 function usageRow(label: string, usedPercent: number, resetsAt?: number): HTMLElement {
@@ -469,19 +535,27 @@ function usageRow(label: string, usedPercent: number, resetsAt?: number): HTMLEl
 function positionPopup(popup: HTMLElement, anchor: HTMLElement, preference: "left" | "above"): void {
   const rect = anchor.getBoundingClientRect();
   const popupRect = popup.getBoundingClientRect();
-  const margin = 8;
+  const horizontalMargin = preference === "above" ? 4 : 8;
+  const verticalMargin = preference === "above" ? 0 : 8;
+  const verticalGap = preference === "above" ? 3 : 12;
   let left = preference === "left" ? rect.left - popupRect.width - 8 : rect.left;
-  let top = preference === "above" ? rect.top - popupRect.height - 7 : rect.top - 12;
-  if (left < margin) left = Math.min(window.innerWidth - popupRect.width - margin, rect.right + 8);
-  if (left + popupRect.width > window.innerWidth - margin) left = window.innerWidth - popupRect.width - margin;
-  if (top < margin) top = preference === "above" ? rect.bottom + 7 : margin;
-  if (top + popupRect.height > window.innerHeight - margin) top = window.innerHeight - popupRect.height - margin;
-  popup.style.left = `${Math.max(margin, left)}px`;
-  popup.style.top = `${Math.max(margin, top)}px`;
+  let top = preference === "above" ? rect.top - popupRect.height - verticalGap : rect.top - verticalGap;
+  if (left < horizontalMargin) left = Math.min(window.innerWidth - popupRect.width - horizontalMargin, rect.right + 8);
+  if (left + popupRect.width > window.innerWidth - horizontalMargin) left = window.innerWidth - popupRect.width - horizontalMargin;
+  if (top < verticalMargin) top = verticalMargin;
+  if (top + popupRect.height > window.innerHeight - verticalMargin) top = window.innerHeight - popupRect.height - verticalMargin;
+  popup.style.left = `${Math.max(horizontalMargin, left)}px`;
+  popup.style.top = `${Math.max(verticalMargin, top)}px`;
 }
 
 function providerFor(id: ProviderId): DashboardProviderView | undefined {
   return state.providers.find((provider) => provider.id === id);
+}
+
+function terminalTaskStateLabel(taskState: SessionCardView["taskState"]): string {
+  if (taskState === "working") return "AI is working";
+  if (taskState === "ready") return "Ready for review";
+  return "AI is idle";
 }
 
 function providerImage(provider: DashboardProviderView, className: string): HTMLImageElement {
@@ -491,12 +565,6 @@ function providerImage(provider: DashboardProviderView, className: string): HTML
   image.alt = provider.displayName;
   image.draggable = false;
   return image;
-}
-
-function pill(text: string): HTMLElement {
-  const node = element("span", "usage-pill");
-  node.textContent = text;
-  return node;
 }
 
 function notice(text: string, className = "conversation-notice"): HTMLElement {
@@ -551,7 +619,7 @@ function trimDecimal(value: number): string {
 function formatSeconds(value: number | null): string {
   if (value === null) return "—";
   const seconds = value / 1_000;
-  return `${seconds >= 10 ? Math.round(seconds) : seconds.toFixed(1).replace(/\.0$/, "")}S`;
+  return `${seconds.toFixed(1).replace(/\.0$/, "")}S`;
 }
 
 function formatResetTime(epochSeconds: number): string {

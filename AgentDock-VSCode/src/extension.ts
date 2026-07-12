@@ -60,6 +60,7 @@ class SessionsViewProvider implements vscode.WebviewViewProvider, vscode.Disposa
 
   resolveWebviewView(view: vscode.WebviewView): void {
     this.view = view;
+    this.resetViewHeading();
     view.webview.options = {
       enableScripts: true,
       localResourceRoots: [
@@ -71,6 +72,7 @@ class SessionsViewProvider implements vscode.WebviewViewProvider, vscode.Disposa
     this.disposables.push(
       view.webview.onDidReceiveMessage((message: WebviewToExtensionMessage) => void this.handleMessage(message)),
       view.onDidChangeVisibility(() => {
+        if (!view.visible) this.resetViewHeading();
         this.scheduleRefresh();
         if (view.visible) void this.refresh(false);
       })
@@ -159,6 +161,17 @@ class SessionsViewProvider implements vscode.WebviewViewProvider, vscode.Disposa
       await vscode.commands.executeCommand("workbench.action.openSettings", "@ext:xmanrui.agentdock");
       return;
     }
+    if (message.type === "show-usage-heading") {
+      if (this.view) {
+        this.view.title = message.details ? `Usage · ${message.details}` : "Usage";
+        this.view.description = undefined;
+      }
+      return;
+    }
+    if (message.type === "reset-view-heading") {
+      this.resetViewHeading();
+      return;
+    }
     if (message.type === "toggle-pin") {
       await this.store.togglePin(message.sessionId);
       const session = this.sessions.find((candidate) => candidate.id === message.sessionId);
@@ -208,6 +221,12 @@ class SessionsViewProvider implements vscode.WebviewViewProvider, vscode.Disposa
     }
     this.rebuildCards();
     await this.postState();
+  }
+
+  private resetViewHeading(): void {
+    if (!this.view) return;
+    this.view.title = "Sessions";
+    this.view.description = undefined;
   }
 
   private enabledSessions(sessions: AgentSession[]): AgentSession[] {

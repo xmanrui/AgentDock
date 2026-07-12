@@ -32,6 +32,8 @@ export type WebviewToExtensionMessage =
   | { type: "ready" }
   | { type: "refresh" }
   | { type: "open-settings" }
+  | { type: "show-usage-heading"; details: string }
+  | { type: "reset-view-heading" }
   | { type: "toggle-pin"; sessionId: string }
   | { type: "open-session"; sessionId: string; yolo: boolean }
   | { type: "load-preview"; sessionId: string }

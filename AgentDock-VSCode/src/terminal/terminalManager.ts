@@ -16,6 +16,7 @@ import { LocalTerminalActivityMonitor } from "./activity.js";
 import { exitMarkerPath, wrapWithExitMarker } from "./exitMarker.js";
 import { TerminalOutputBuffer } from "./streamText.js";
 import { reduceTerminalTaskState } from "./taskState.js";
+import { terminalTabTitle } from "./title.js";
 
 interface ManagedTerminal {
   token: string;
@@ -34,6 +35,8 @@ interface ManagedTerminal {
   markerPath?: string;
   markerTimer?: NodeJS.Timeout;
   viewedTimer?: NodeJS.Timeout;
+  presentedTitle: string;
+  titleQueue: Promise<void>;
 }
 
 export interface TerminalLaunchResult {
@@ -120,11 +123,12 @@ export class TerminalManager implements vscode.Disposable {
       await rm(marker, { force: true });
     }
     const launchCommand = marker ? wrapWithExitMarker(rendered.command, marker, process.platform) : rendered.command;
+    const baseTitle = session.name || `${provider.displayName} session`;
 
     let terminal: vscode.Terminal;
     try {
       terminal = vscode.window.createTerminal({
-        name: session.name || `${provider.displayName} session`,
+        name: baseTitle,
         cwd: session.cwd,
         iconPath: this.providerIcons[provider.id],
         isTransient: false
@@ -137,7 +141,7 @@ export class TerminalManager implements vscode.Disposable {
       token,
       terminal,
       sessionId: session.id,
-      sessionName: session.name,
+      sessionName: baseTitle,
       providerId: provider.id,
       expectedCommand: launchCommand,
       terminalOpen: true,
@@ -145,6 +149,8 @@ export class TerminalManager implements vscode.Disposable {
       changedAt: Date.now(),
       output: new TerminalOutputBuffer(),
       markerPath: marker,
+      presentedTitle: baseTitle,
+      titleQueue: Promise.resolve(),
       monitor: new LocalTerminalActivityMonitor(provider.id, session.historyFilePath, (event) => {
         const current = this.instances.get(terminal);
         if (!current?.terminalOpen) return;
@@ -155,11 +161,11 @@ export class TerminalManager implements vscode.Disposable {
         current.changedAt = Date.now();
         if (event === "completed") {
           current.liveText = undefined;
-          this.scheduleViewedTransition(current);
         } else if (current.viewedTimer) {
           clearTimeout(current.viewedTimer);
           current.viewedTimer = undefined;
         }
+        this.queueTerminalTitleSync(current);
         this.changeEmitter.fire(current.sessionId);
       })
     };
@@ -232,7 +238,9 @@ export class TerminalManager implements vscode.Disposable {
     }
     if (!terminal) return;
     const instance = this.instances.get(terminal);
-    if (!instance || instance.taskState !== "ready") return;
+    if (!instance) return;
+    this.queueTerminalTitleSync(instance);
+    if (instance.taskState !== "ready") return;
     this.scheduleViewedTransition(instance);
   }
 
@@ -257,6 +265,7 @@ export class TerminalManager implements vscode.Disposable {
     if (instance.viewedTimer) clearTimeout(instance.viewedTimer);
     instance.viewedTimer = undefined;
     if (instance.markerPath) void rm(instance.markerPath, { force: true });
+    this.queueTerminalTitleSync(instance);
     this.changeEmitter.fire(instance.sessionId);
   }
 
@@ -288,9 +297,26 @@ export class TerminalManager implements vscode.Disposable {
       ) {
         instance.taskState = reduceTerminalTaskState(instance.taskState, "viewed");
         instance.changedAt = Date.now();
+        this.queueTerminalTitleSync(instance);
         this.changeEmitter.fire(instance.sessionId);
       }
     }, 500);
+  }
+
+  private queueTerminalTitleSync(instance: ManagedTerminal): void {
+    if (vscode.window.activeTerminal !== instance.terminal) return;
+    instance.titleQueue = instance.titleQueue
+      .then(async () => {
+        if (this.instances.get(instance.terminal) !== instance) return;
+        if (vscode.window.activeTerminal !== instance.terminal) return;
+        const title = terminalTabTitle(instance.sessionName, instance.taskState);
+        if (title === instance.presentedTitle) return;
+        await vscode.commands.executeCommand("workbench.action.terminal.renameWithArg", { name: title });
+        instance.presentedTitle = title;
+      })
+      .catch(() => {
+        // Title presentation is optional; terminal lifecycle tracking must continue.
+      });
   }
 
   private async clipboardFallback(command: string): Promise<TerminalLaunchResult> {

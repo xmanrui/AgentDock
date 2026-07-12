@@ -5,6 +5,7 @@ import * as vscode from "vscode";
 import { providerById } from "../../src/core/providers.js";
 import type { AgentSession, ProviderId } from "../../src/core/model.js";
 import { TerminalManager } from "../../src/terminal/terminalManager.js";
+import { terminalTabTitle } from "../../src/terminal/title.js";
 
 export async function run(): Promise<void> {
   const extension = vscode.extensions.getExtension("xmanrui.agentdock");
@@ -74,12 +75,19 @@ exit 0
     assert.equal(launch.ok, true, launch.message);
     assert.equal(manager.runtime(session.id).terminalOpen, true);
 
+    const terminal = vscode.window.terminals.find((candidate) => candidate.name === session.name);
+    assert.ok(terminal, "AgentDock terminal should be visible to the Extension Host");
+
     await writeFile(history, `${JSON.stringify({ type: "event_msg", payload: { type: "task_started" } })}\n`, { flag: "a" });
     await waitUntil(() => manager.runtime(session.id).taskState === "working", 5_000, "terminal should enter Working");
+    await waitUntil(
+      () => terminal.name === terminalTabTitle(session.name, "working"),
+      2_000,
+      "Working should update the active terminal title"
+    );
     await writeFile(startOutput, "go");
 
-    const terminal = vscode.window.terminals.find((candidate) => candidate.name === session.name);
-    if (terminal?.shellIntegration) {
+    if (terminal.shellIntegration) {
       try {
         await waitUntil(() => Boolean(manager.runtime(session.id).liveText), 5_000, "shell output should reach the live ticker");
       } catch {
@@ -89,10 +97,27 @@ exit 0
 
     await writeFile(history, `${JSON.stringify({ type: "event_msg", payload: { type: "task_complete" } })}\n`, { flag: "a" });
     await waitUntil(() => manager.runtime(session.id).taskState === "ready", 5_000, "terminal should become Ready");
+    await waitUntil(
+      () => terminal.name === terminalTabTitle(session.name, "ready"),
+      2_000,
+      "Ready should update the active terminal title"
+    );
+    await delay(750);
+    assert.equal(manager.runtime(session.id).taskState, "ready", "an already visible terminal should retain Ready");
+    assert.equal(terminal.name, terminalTabTitle(session.name, "ready"));
+
+    const otherTerminal = vscode.window.createTerminal({ name: "AgentDock integration viewer" });
+    otherTerminal.show(false);
+    await waitUntil(() => vscode.window.activeTerminal === otherTerminal, 2_000, "another terminal should become active");
+    terminal.show(false);
+    await waitUntil(() => manager.runtime(session.id).taskState === "idle", 2_000, "reviewing Ready should restore Idle");
+    await waitUntil(() => terminal.name === session.name, 2_000, "Idle should restore the original terminal title");
+    otherTerminal.dispose();
+
     await writeFile(finish, "done");
     await waitUntil(() => !manager.runtime(session.id).terminalOpen, 5_000, "CLI exit should clear terminal-open state");
     assert.equal(manager.runtime(session.id).taskState, "idle");
-    terminal?.dispose();
+    terminal.dispose();
   } finally {
     manager.dispose();
     await Promise.all([executable, history, startOutput, finish].map((file) => rm(file, { force: true })));
@@ -106,6 +131,10 @@ async function waitUntil(predicate: () => boolean, timeoutMillis: number, messag
     await new Promise((resolve) => setTimeout(resolve, 100));
   }
   assert.fail(message);
+}
+
+async function delay(milliseconds: number): Promise<void> {
+  await new Promise((resolve) => setTimeout(resolve, milliseconds));
 }
 
 function shellLiteral(value: string): string {
