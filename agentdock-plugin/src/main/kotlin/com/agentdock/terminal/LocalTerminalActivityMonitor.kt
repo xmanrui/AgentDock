@@ -5,6 +5,7 @@ import com.google.gson.JsonObject
 import com.google.gson.JsonParser
 import com.intellij.openapi.application.ApplicationManager
 import com.intellij.util.concurrency.AppExecutorUtil
+import java.io.ByteArrayOutputStream
 import java.io.File
 import java.io.RandomAccessFile
 import java.nio.charset.StandardCharsets
@@ -26,6 +27,7 @@ internal class LocalTerminalActivityMonitor(
     private var geminiMessageCount = 0
     private var geminiLastModified = 0L
     private var geminiFileLength = 0L
+    private val lineDecoder = BoundedUtf8LineDecoder(MAX_ACTIVITY_LINE_BYTES)
     private var future: ScheduledFuture<*>? = null
 
     fun start() {
@@ -102,23 +104,24 @@ internal class LocalTerminalActivityMonitor(
         val fileLength = historyFile.length()
         if (fileLength < offset) {
             offset = 0L
+            lineDecoder.reset()
         }
         if (fileLength <= offset) return
 
-        val bytesToRead = min(fileLength - offset, MAX_READ_BYTES.toLong()).toInt()
-        val bytes = ByteArray(bytesToRead)
+        var bytesRemaining = min(fileLength - offset, MAX_READ_BYTES_PER_POLL.toLong()).toInt()
+        val buffer = ByteArray(min(bytesRemaining, READ_BUFFER_BYTES))
         RandomAccessFile(historyFile, "r").use { file ->
             file.seek(offset)
-            file.readFully(bytes)
-        }
-        val lastNewline = bytes.indexOfLast { byte -> byte == NEWLINE_BYTE }
-        if (lastNewline < 0) return
-
-        val completeBytes = bytes.copyOfRange(0, lastNewline + 1)
-        offset += lastNewline + 1L
-        String(completeBytes, StandardCharsets.UTF_8).lineSequence().forEach { line ->
-            val event = TerminalActivityEventParser.parse(source.providerId, line) ?: return@forEach
-            dispatch(event)
+            while (bytesRemaining > 0) {
+                val bytesRead = file.read(buffer, 0, min(bytesRemaining, buffer.size))
+                if (bytesRead <= 0) break
+                offset += bytesRead
+                bytesRemaining -= bytesRead
+                lineDecoder.accept(buffer, bytesRead).forEach { line ->
+                    val event = TerminalActivityEventParser.parse(source.providerId, line) ?: return@forEach
+                    dispatch(event)
+                }
+            }
         }
     }
 
@@ -132,7 +135,66 @@ internal class LocalTerminalActivityMonitor(
 
     companion object {
         private const val POLL_INTERVAL_MS = 350L
-        private const val MAX_READ_BYTES = 1_048_576
+        private const val READ_BUFFER_BYTES = 65_536
+        private const val MAX_READ_BYTES_PER_POLL = 8_388_608
+        private const val MAX_ACTIVITY_LINE_BYTES = 1_048_576
+    }
+}
+
+private class BoundedUtf8LineDecoder(
+    private val maximumLineBytes: Int
+) {
+    init {
+        require(maximumLineBytes > 0)
+    }
+
+    private val pending = ByteArrayOutputStream(min(maximumLineBytes, INITIAL_CAPACITY_BYTES))
+    private var discardingOversizedLine = false
+
+    fun accept(bytes: ByteArray, length: Int = bytes.size): List<String> {
+        require(length in 0..bytes.size)
+        if (length == 0) return emptyList()
+
+        val lines = mutableListOf<String>()
+        var segmentStart = 0
+        for (index in 0 until length) {
+            if (bytes[index] != NEWLINE_BYTE) continue
+
+            if (!discardingOversizedLine) {
+                append(bytes, segmentStart, index - segmentStart)
+            }
+            if (!discardingOversizedLine) {
+                lines += String(pending.toByteArray(), StandardCharsets.UTF_8).removeSuffix("\r")
+            }
+            pending.reset()
+            discardingOversizedLine = false
+            segmentStart = index + 1
+        }
+
+        if (segmentStart < length && !discardingOversizedLine) {
+            append(bytes, segmentStart, length - segmentStart)
+        }
+        return lines
+    }
+
+    fun reset() {
+        pending.reset()
+        discardingOversizedLine = false
+    }
+
+    private fun append(bytes: ByteArray, offset: Int, length: Int) {
+        if (length <= 0) return
+        if (pending.size() + length > maximumLineBytes) {
+            // Lifecycle records are small; skip oversized tool output without blocking later events.
+            pending.reset()
+            discardingOversizedLine = true
+            return
+        }
+        pending.write(bytes, offset, length)
+    }
+
+    companion object {
+        private const val INITIAL_CAPACITY_BYTES = 4_096
         private const val NEWLINE_BYTE: Byte = 0x0A
     }
 }
