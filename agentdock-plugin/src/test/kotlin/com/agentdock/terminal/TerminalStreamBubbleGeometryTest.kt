@@ -53,6 +53,22 @@ class TerminalStreamBubbleGeometryTest {
     }
 
     @Test
+    fun `gif sits between the bubble pointer and terminal title`() {
+        val anchor = TerminalStreamAnchor(centerX = 450, topY = 600, width = 320, height = 30)
+        val layout = TerminalStreamBubbleGeometry.layout(
+            containerWidth = 900,
+            anchor = anchor,
+            gifSize = TerminalStreamGifSize(width = 192, height = 208)
+        )
+
+        assertTrue(layout.hasGif)
+        assertTrue(layout.arrowTipY < layout.gifY)
+        assertTrue(layout.gifY + layout.gifHeight < anchor.topY)
+        assertEquals(anchor.centerX, layout.gifX + layout.gifWidth / 2)
+        assertEquals(layout.gifX + layout.gifWidth / 2, layout.arrowTipX)
+    }
+
+    @Test
     fun `adjacent terminal bubbles keep a visual gap`() {
         val first = TerminalStreamBubbleGeometry.layout(
             900,

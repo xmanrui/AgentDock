@@ -16,12 +16,15 @@ import java.awt.event.ComponentAdapter
 import java.awt.event.ComponentEvent
 import java.awt.geom.AffineTransform
 import java.awt.geom.Path2D
+import javax.swing.ImageIcon
 import javax.swing.JComponent
 import javax.swing.JLayeredPane
 import javax.swing.SwingUtilities
 import javax.swing.Timer
 import javax.swing.UIManager
+import kotlin.math.min
 import kotlin.math.roundToInt
+import kotlin.random.Random
 
 internal class TerminalStreamOverlayController(
     private val content: Content,
@@ -120,8 +123,11 @@ internal class TerminalStreamOverlayController(
 internal class TerminalStreamTickerOverlay(
     private val anchorProvider: () -> TerminalStreamAnchor?,
     private val clock: () -> Long = System::currentTimeMillis,
-    private val ticker: TerminalStreamTickerModel = TerminalStreamTickerModel()
+    private val ticker: TerminalStreamTickerModel = TerminalStreamTickerModel(),
+    private val gifProvider: () -> TerminalStreamGifSelection? = TerminalStreamGifCatalog::acquire,
+    private val gifReleaser: (TerminalStreamGifSelection) -> Unit = TerminalStreamGifCatalog::release
 ) : JComponent() {
+    private var selectedGif: TerminalStreamGifSelection? = null
     private val timer = Timer(FRAME_INTERVAL_MS) {
         if (!ticker.isActive()) {
             (it.source as Timer).stop()
@@ -141,9 +147,10 @@ internal class TerminalStreamTickerOverlay(
 
     fun showText(text: String) {
         if (text.isBlank() || width <= 0 || height <= 0) return
+        if (!ticker.isActive()) selectedGif = gifProvider()
         val anchor = anchorProvider()
         val viewportWidth = anchor
-            ?.let { TerminalStreamBubbleGeometry.layout(width, it).contentWidth }
+            ?.let { TerminalStreamBubbleGeometry.layout(width, it, selectedGif?.icon?.gifSize()).contentWidth }
             ?: JBUI.scale(FALLBACK_VIEWPORT_WIDTH)
         ticker.offer(text, viewportWidth, clock())
         isVisible = true
@@ -154,6 +161,8 @@ internal class TerminalStreamTickerOverlay(
     fun hideTicker() {
         timer.stop()
         ticker.clear()
+        selectedGif?.let(gifReleaser)
+        selectedGif = null
         isVisible = false
         repaint()
     }
@@ -177,8 +186,9 @@ internal class TerminalStreamTickerOverlay(
                 ?.deriveFont(Font.PLAIN, JBUI.scale(FONT_SIZE).toFloat())
                 ?: Font(Font.SANS_SERIF, Font.PLAIN, JBUI.scale(FONT_SIZE))
 
-            val layout = TerminalStreamBubbleGeometry.layout(width, anchor)
+            val layout = TerminalStreamBubbleGeometry.layout(width, anchor, selectedGif?.icon?.gifSize())
             paintBubble(copy, layout)
+            paintGif(copy, layout)
             paintTickerText(copy, layout)
         } finally {
             copy.dispose()
@@ -242,6 +252,20 @@ internal class TerminalStreamTickerOverlay(
         graphics.clip = originalClip
     }
 
+    private fun paintGif(graphics: Graphics2D, layout: TerminalStreamBubbleLayout) {
+        val gif = selectedGif?.icon ?: return
+        if (!layout.hasGif) return
+        graphics.setRenderingHint(RenderingHints.KEY_INTERPOLATION, RenderingHints.VALUE_INTERPOLATION_BILINEAR)
+        graphics.drawImage(
+            gif.image,
+            layout.gifX,
+            layout.gifY,
+            layout.gifWidth,
+            layout.gifHeight,
+            this
+        )
+    }
+
     companion object {
         private const val FRAME_INTERVAL_MS = 33
         private const val FONT_SIZE = 12
@@ -250,6 +274,81 @@ internal class TerminalStreamTickerOverlay(
         private val BUBBLE_BORDER = Color(0x2E, 0x4D, 0x89)
         private val BUBBLE_FOREGROUND = Color(243, 246, 252, 238)
         private val SHADOW_COLOR = Color(0, 0, 0, 38)
+    }
+}
+
+internal data class TerminalStreamGifSize(
+    val width: Int,
+    val height: Int
+)
+
+internal data class TerminalStreamGifSelection(
+    val resourcePath: String,
+    val icon: ImageIcon
+)
+
+private fun ImageIcon.gifSize(): TerminalStreamGifSize? {
+    return if (iconWidth > 0 && iconHeight > 0) TerminalStreamGifSize(iconWidth, iconHeight) else null
+}
+
+internal object TerminalStreamGifCatalog {
+    private const val RESOURCE_DIRECTORY = "/images/gifs"
+    private const val CATALOG_RESOURCE = "$RESOURCE_DIRECTORY/catalog.txt"
+    private const val FIRST_GIF_RESOURCE = "$RESOURCE_DIRECTORY/basketball-kunkun-running-right.gif"
+
+    private val gifResourcePaths: List<String> by lazy { discoverResourcePaths() }
+    private val usageCountsByPath = mutableMapOf<String, Int>()
+
+    @Synchronized
+    fun acquire(random: Random = Random.Default): TerminalStreamGifSelection? {
+        if (gifResourcePaths.isEmpty()) return null
+        val unusedPaths = gifResourcePaths.filter { usageCountsByPath.getOrDefault(it, 0) == 0 }
+        val availablePaths = unusedPaths.ifEmpty { gifResourcePaths }
+        val preferredFirstPath = FIRST_GIF_RESOURCE.takeIf {
+            usageCountsByPath.isEmpty() && it in availablePaths
+        }
+        val candidates = buildList {
+            preferredFirstPath?.let(::add)
+            addAll(availablePaths.filterNot { it == preferredFirstPath }.shuffled(random))
+        }
+        for (path in candidates) {
+            val url = TerminalStreamGifCatalog::class.java.getResource(path) ?: continue
+            val icon = ImageIcon(url)
+            if (icon.iconWidth > 0 && icon.iconHeight > 0) {
+                usageCountsByPath[path] = usageCountsByPath.getOrDefault(path, 0) + 1
+                return TerminalStreamGifSelection(path, icon)
+            }
+        }
+        return null
+    }
+
+    @Synchronized
+    fun release(selection: TerminalStreamGifSelection) {
+        val usageCount = usageCountsByPath[selection.resourcePath] ?: 0
+        if (usageCount <= 1) {
+            usageCountsByPath.remove(selection.resourcePath)
+        } else {
+            usageCountsByPath[selection.resourcePath] = usageCount - 1
+        }
+        selection.icon.image.flush()
+    }
+
+    internal fun resourcePaths(): List<String> = gifResourcePaths
+
+    private fun discoverResourcePaths(): List<String> {
+        return runCatching {
+            TerminalStreamGifCatalog::class.java.getResourceAsStream(CATALOG_RESOURCE)
+                ?.bufferedReader()
+                ?.useLines { lines ->
+                    lines.map(String::trim)
+                        .filter { it.isNotEmpty() && it.endsWith(".gif", ignoreCase = true) }
+                        .map { "$RESOURCE_DIRECTORY/$it" }
+                        .distinct()
+                        .sorted()
+                        .toList()
+                }
+                .orEmpty()
+        }.getOrDefault(emptyList())
     }
 }
 
@@ -347,10 +446,17 @@ internal data class TerminalStreamBubbleLayout(
     val arrowBaseRightX: Int,
     val arrowBaseY: Int,
     val arrowTipX: Int,
-    val arrowTipY: Int
+    val arrowTipY: Int,
+    val gifX: Int,
+    val gifY: Int,
+    val gifWidth: Int,
+    val gifHeight: Int
 ) {
     val contentWidth: Int
         get() = (boxWidth - horizontalPadding * 2).coerceAtLeast(1)
+
+    val hasGif: Boolean
+        get() = gifWidth > 0 && gifHeight > 0
 }
 
 internal data class TerminalStreamAnchor(
@@ -361,7 +467,11 @@ internal data class TerminalStreamAnchor(
 )
 
 internal object TerminalStreamBubbleGeometry {
-    fun layout(containerWidth: Int, anchor: TerminalStreamAnchor): TerminalStreamBubbleLayout {
+    fun layout(
+        containerWidth: Int,
+        anchor: TerminalStreamAnchor,
+        gifSize: TerminalStreamGifSize? = null
+    ): TerminalStreamBubbleLayout {
         val margin = JBUI.scale(6)
         val siblingGap = JBUI.scale(6)
         val preferredBoxWidth = (anchor.width - siblingGap).coerceAtLeast(1)
@@ -370,25 +480,66 @@ internal object TerminalStreamBubbleGeometry {
         val arrowHeight = JBUI.scale(6)
         val arrowHalfWidth = minOf(JBUI.scale(8), (boxWidth / 4).coerceAtLeast(1))
         val verticalGap = JBUI.scale(3)
+        val gifBubbleGap = JBUI.scale(2)
+        val gifTitleGap = JBUI.scale(2)
+        val maximumGifHeight = (
+            anchor.topY - margin - boxHeight - arrowHeight - gifBubbleGap - gifTitleGap
+            ).coerceAtLeast(0).coerceAtMost(JBUI.scale(52))
+        val maximumGifWidth = minOf(boxWidth, JBUI.scale(64))
+        val scaledGifSize = gifSize?.scaleToFit(maximumGifWidth, maximumGifHeight)
+        val gifWidth = scaledGifSize?.width ?: 0
+        val gifHeight = scaledGifSize?.height ?: 0
+        val hasGif = gifWidth > 0 && gifHeight > 0
+        val gifX = if (hasGif) {
+            (anchor.centerX - gifWidth / 2).coerceIn(
+                margin,
+                (containerWidth - gifWidth - margin).coerceAtLeast(margin)
+            )
+        } else {
+            anchor.centerX
+        }
+        val gifY = if (hasGif) anchor.topY - gifTitleGap - gifHeight else anchor.topY
         val boxX = (anchor.centerX - boxWidth / 2).coerceIn(
             margin,
             (containerWidth - boxWidth - margin).coerceAtLeast(margin)
         )
-        val boxY = (anchor.topY - verticalGap - arrowHeight - boxHeight).coerceAtLeast(margin)
-        val arrowTipX = boxX + boxWidth / 2
+        val boxBottom = if (hasGif) gifY - gifBubbleGap - arrowHeight else anchor.topY - verticalGap - arrowHeight
+        val boxY = (boxBottom - boxHeight).coerceAtLeast(margin)
+        val cornerRadius = minOf(JBUI.scale(7), boxHeight / 2)
+        val desiredArrowTipX = if (hasGif) gifX + gifWidth / 2 else anchor.centerX
+        val minimumArrowTipX = boxX + arrowHalfWidth
+        val maximumArrowTipX = boxX + boxWidth - arrowHalfWidth
+        val arrowTipX = if (minimumArrowTipX <= maximumArrowTipX) {
+            desiredArrowTipX.coerceIn(minimumArrowTipX, maximumArrowTipX)
+        } else {
+            boxX + boxWidth / 2
+        }
         val arrowBaseY = boxY + boxHeight
         return TerminalStreamBubbleLayout(
             boxX = boxX,
             boxY = boxY,
             boxWidth = boxWidth,
             boxHeight = boxHeight,
-            cornerRadius = minOf(JBUI.scale(7), boxHeight / 2),
+            cornerRadius = cornerRadius,
             horizontalPadding = JBUI.scale(10),
             arrowBaseLeftX = arrowTipX - arrowHalfWidth,
             arrowBaseRightX = arrowTipX + arrowHalfWidth,
             arrowBaseY = arrowBaseY,
             arrowTipX = arrowTipX,
-            arrowTipY = arrowBaseY + arrowHeight
+            arrowTipY = arrowBaseY + arrowHeight,
+            gifX = gifX,
+            gifY = gifY,
+            gifWidth = gifWidth,
+            gifHeight = gifHeight
+        )
+    }
+
+    private fun TerminalStreamGifSize.scaleToFit(maximumWidth: Int, maximumHeight: Int): TerminalStreamGifSize? {
+        if (width <= 0 || height <= 0 || maximumWidth <= 0 || maximumHeight <= 0) return null
+        val scale = min(maximumWidth.toDouble() / width, maximumHeight.toDouble() / height)
+        return TerminalStreamGifSize(
+            width = (width * scale).roundToInt().coerceAtLeast(1),
+            height = (height * scale).roundToInt().coerceAtLeast(1)
         )
     }
 }

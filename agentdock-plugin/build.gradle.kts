@@ -35,6 +35,30 @@ kotlin {
     }
 }
 
+val generateGifCatalog = tasks.register("generateGifCatalog") {
+    val gifDirectory = layout.projectDirectory.dir("src/main/resources/images/gifs")
+    val outputDirectory = layout.buildDirectory.dir("generated/resources/gifCatalog")
+    inputs.files(fileTree(gifDirectory) { include("*.gif") })
+    outputs.dir(outputDirectory)
+
+    doLast {
+        val gifNames = fileTree(gifDirectory)
+            .matching { include("*.gif") }
+            .files
+            .map { it.name }
+            .sorted()
+        val catalog = outputDirectory.get().file("images/gifs/catalog.txt").asFile
+        catalog.parentFile.mkdirs()
+        catalog.writeText(gifNames.joinToString(separator = "\n", postfix = "\n"))
+    }
+}
+
+sourceSets {
+    main {
+        resources.srcDir(generateGifCatalog)
+    }
+}
+
 tasks {
     test {
         useJUnitPlatform()
