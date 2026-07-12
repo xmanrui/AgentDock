@@ -1,0 +1,200 @@
+{
+  "name": "agentdock",
+  "displayName": "AgentDock",
+  "description": "Project-scoped Codex, Claude Code, and Gemini CLI session dashboard for VS Code.",
+  "version": "1.0.0",
+  "publisher": "xmanrui",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/xmanrui/AgentDock.git"
+  },
+  "engines": {
+    "vscode": "^1.95.0"
+  },
+  "categories": [
+    "Other",
+    "Visualization"
+  ],
+  "keywords": [
+    "codex",
+    "claude-code",
+    "gemini-cli",
+    "terminal",
+    "ai"
+  ],
+  "activationEvents": [
+    "onView:agentdock.sessions",
+    "onCommand:agentdock.refreshSessions",
+    "onCommand:agentdock.openSettings"
+  ],
+  "main": "./dist/extension.js",
+  "contributes": {
+    "viewsContainers": {
+      "activitybar": [
+        {
+          "id": "agentdock",
+          "title": "AgentDock",
+          "icon": "media/agentDock.svg"
+        }
+      ]
+    },
+    "views": {
+      "agentdock": [
+        {
+          "id": "agentdock.sessions",
+          "name": "Sessions",
+          "type": "webview",
+          "icon": "media/agentDock.svg",
+          "contextualTitle": "AgentDock"
+        }
+      ]
+    },
+    "commands": [
+      {
+        "command": "agentdock.refreshSessions",
+        "title": "AgentDock: Refresh Sessions",
+        "icon": "$(refresh)"
+      },
+      {
+        "command": "agentdock.openSettings",
+        "title": "AgentDock: Open Provider Settings",
+        "icon": "$(settings-gear)"
+      }
+    ],
+    "menus": {
+      "view/title": [
+        {
+          "command": "agentdock.refreshSessions",
+          "when": "view == agentdock.sessions",
+          "group": "navigation@1"
+        },
+        {
+          "command": "agentdock.openSettings",
+          "when": "view == agentdock.sessions",
+          "group": "navigation@2"
+        }
+      ]
+    },
+    "configuration": {
+      "title": "AgentDock",
+      "properties": {
+        "agentdock.refreshIntervalMinutes": {
+          "type": "number",
+          "default": 3,
+          "minimum": 1,
+          "maximum": 60,
+          "description": "How often the visible AgentDock view refreshes local sessions."
+        },
+        "agentdock.previewMessageLimit": {
+          "type": "number",
+          "default": 24,
+          "minimum": 4,
+          "maximum": 100,
+          "description": "Maximum number of recent messages shown in a session preview."
+        },
+        "agentdock.providers.codex.enabled": {
+          "type": "boolean",
+          "default": true,
+          "description": "Enable Codex session discovery and commands."
+        },
+        "agentdock.providers.codex.executable": {
+          "type": "string",
+          "default": "codex",
+          "description": "Codex executable name or absolute path."
+        },
+        "agentdock.providers.codex.detectCommand": {
+          "type": "string",
+          "default": "codex --version"
+        },
+        "agentdock.providers.codex.startCommand": {
+          "type": "string",
+          "default": "{{executable}}"
+        },
+        "agentdock.providers.codex.resumeCommand": {
+          "type": "string",
+          "default": "{{executable}} resume {{providerSessionId?}}"
+        },
+        "agentdock.providers.codex.yoloResumeCommand": {
+          "type": "string",
+          "default": "{{executable}} resume --dangerously-bypass-approvals-and-sandbox {{providerSessionId?}}"
+        },
+        "agentdock.providers.claudeCode.enabled": {
+          "type": "boolean",
+          "default": true,
+          "description": "Enable Claude Code session discovery and commands."
+        },
+        "agentdock.providers.claudeCode.executable": {
+          "type": "string",
+          "default": "claude",
+          "description": "Claude Code executable name or absolute path."
+        },
+        "agentdock.providers.claudeCode.detectCommand": {
+          "type": "string",
+          "default": "claude --version"
+        },
+        "agentdock.providers.claudeCode.startCommand": {
+          "type": "string",
+          "default": "{{executable}} --ide --name {{sessionName}}"
+        },
+        "agentdock.providers.claudeCode.resumeCommand": {
+          "type": "string",
+          "default": "{{executable}} --resume {{providerSessionId?}} --ide"
+        },
+        "agentdock.providers.claudeCode.yoloResumeCommand": {
+          "type": "string",
+          "default": "{{executable}} --resume {{providerSessionId?}} --ide --dangerously-skip-permissions"
+        },
+        "agentdock.providers.gemini.enabled": {
+          "type": "boolean",
+          "default": true,
+          "description": "Enable Gemini CLI session discovery and commands."
+        },
+        "agentdock.providers.gemini.executable": {
+          "type": "string",
+          "default": "gemini",
+          "description": "Gemini CLI executable name or absolute path."
+        },
+        "agentdock.providers.gemini.detectCommand": {
+          "type": "string",
+          "default": "gemini --version"
+        },
+        "agentdock.providers.gemini.startCommand": {
+          "type": "string",
+          "default": "{{executable}}"
+        },
+        "agentdock.providers.gemini.resumeCommand": {
+          "type": "string",
+          "default": "{{executable}} --resume {{providerSessionId?}}"
+        },
+        "agentdock.providers.gemini.yoloResumeCommand": {
+          "type": "string",
+          "default": "{{executable}} --resume {{providerSessionId?}} --yolo"
+        }
+      }
+    }
+  },
+  "scripts": {
+    "clean": "node -e \"require('node:fs').rmSync('dist',{recursive:true,force:true})\"",
+    "build": "node esbuild.mjs",
+    "watch": "node esbuild.mjs --watch",
+    "check": "tsc --noEmit && eslint src test",
+    "test": "vitest run",
+    "test:coverage": "vitest run --coverage",
+    "package": "npm run clean && npm run check && npm test && npm run build && vsce package --out dist/agentdock-vscode.vsix",
+    "vscode:prepublish": "npm run build"
+  },
+  "devDependencies": {
+    "@eslint/js": "^9.17.0",
+    "@types/node": "^22.10.0",
+    "@types/vscode": "^1.95.0",
+    "@vscode/test-electron": "^2.4.1",
+    "@vscode/vsce": "^3.2.1",
+    "@vitest/coverage-v8": "^2.1.8",
+    "esbuild": "^0.24.2",
+    "eslint": "^9.17.0",
+    "typescript": "^5.7.2",
+    "typescript-eslint": "^8.18.2",
+    "vitest": "^2.1.8"
+  }
+}
