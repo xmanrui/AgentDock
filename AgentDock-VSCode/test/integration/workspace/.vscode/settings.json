@@ -1,0 +1,10 @@
+{
+  "terminal.integrated.defaultProfile.osx": "AgentDock Test Shell",
+  "terminal.integrated.profiles.osx": {
+    "AgentDock Test Shell": {
+      "path": "/bin/sh",
+      "args": []
+    }
+  },
+  "terminal.integrated.inheritEnv": false
+}

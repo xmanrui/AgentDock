@@ -30,6 +30,6 @@ export function refreshIntervalMillis(): number {
 }
 
 export function previewMessageLimit(): number {
-  const limit = vscode.workspace.getConfiguration("agentdock").get<number>("previewMessageLimit", 24);
-  return Math.max(4, Math.min(100, Math.floor(limit)));
+  const limit = vscode.workspace.getConfiguration("agentdock").get<number>("previewMessageLimit", 9);
+  return Math.max(1, Math.min(100, Math.floor(limit)));
 }

@@ -5,7 +5,9 @@ docs/**
 src/**
 test/**
 node_modules/**
-*.map
+.vscode-test/**
+**/*.map
+.gitignore
 eslint.config.mjs
 esbuild.mjs
 tsconfig.json

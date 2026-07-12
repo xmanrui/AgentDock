@@ -12,6 +12,9 @@
   "engines": {
     "vscode": "^1.95.0"
   },
+  "extensionKind": [
+    "workspace"
+  ],
   "categories": [
     "Other",
     "Visualization"
@@ -88,10 +91,10 @@
         },
         "agentdock.previewMessageLimit": {
           "type": "number",
-          "default": 24,
-          "minimum": 4,
+          "default": 9,
+          "minimum": 1,
           "maximum": 100,
-          "description": "Maximum number of recent messages shown in a session preview."
+          "description": "Number of recent messages retained after the opening message in a session preview."
         },
         "agentdock.providers.codex.enabled": {
           "type": "boolean",
@@ -181,6 +184,7 @@
     "check": "tsc --noEmit && eslint src test",
     "test": "vitest run",
     "test:coverage": "vitest run --coverage",
+    "test:integration": "npm run build && esbuild test/integration/suite.ts --bundle --platform=node --format=cjs --external:vscode --outfile=dist/integration-tests.cjs && node test/integration/run.mjs",
     "package": "npm run clean && npm run check && npm test && npm run build && vsce package --out dist/agentdock-vscode.vsix",
     "vscode:prepublish": "npm run build"
   },
@@ -188,13 +192,13 @@
     "@eslint/js": "^9.17.0",
     "@types/node": "^22.10.0",
     "@types/vscode": "^1.95.0",
+    "@vitest/coverage-v8": "^4.1.10",
     "@vscode/test-electron": "^2.4.1",
-    "@vscode/vsce": "^3.2.1",
-    "@vitest/coverage-v8": "^2.1.8",
-    "esbuild": "^0.24.2",
+    "@vscode/vsce": "^3.9.2",
+    "esbuild": "^0.28.1",
     "eslint": "^9.17.0",
     "typescript": "^5.7.2",
     "typescript-eslint": "^8.18.2",
-    "vitest": "^2.1.8"
+    "vitest": "^4.1.10"
   }
 }

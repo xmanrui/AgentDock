@@ -55,11 +55,13 @@ export class SessionDiscoveryService {
       sessionsDirectory,
       (filePath) => path.basename(filePath).startsWith("rollout-") && filePath.endsWith(".jsonl")
     );
-    const sessions = await Promise.all(
-      files.map(async (filePath) => {
+    const sessions = await mapWithConcurrency(
+      files,
+      512,
+      async (filePath) => {
         const id = UUID_PATTERN.exec(path.basename(filePath, ".jsonl"))?.[0];
         return this.cachedParse("codex", filePath, projectPath, () => this.parseCodex(filePath, projectPath, id, id ? index.get(id) : undefined));
-      })
+      }
     );
     return sessions.filter((session): session is AgentSession => session !== undefined);
   }
@@ -100,6 +102,7 @@ export class SessionDiscoveryService {
           if (sessionSummary(candidate)) firstUserMessage = candidate;
         }
       }
+      if (providerSessionId && cwd && firstUserMessage && indexEntry?.updatedAt) break;
     }
 
     if (!providerSessionId || !cwd || !belongsToProject(cwd, projectPath)) return undefined;
@@ -144,17 +147,23 @@ export class SessionDiscoveryService {
   }
 
   private async discoverClaude(projectPath: string): Promise<AgentSession[]> {
-    const directoryName = projectPath.replace(/[\\/]/g, "-");
-    const historyDirectory = path.join(this.homeDirectory, ".claude", "projects", directoryName);
-    if (!(await directoryExists(historyDirectory))) return [];
-    const entries = await readdir(historyDirectory, { withFileTypes: true });
-    const sessions = await Promise.all(
-      entries
+    const projectsDirectory = path.join(this.homeDirectory, ".claude", "projects");
+    const historyDirectories = [...new Set([
+      projectPath.replace(/[\\/]/g, "-"),
+      projectPath.replace(/[:\\/]/g, "-")
+    ])].map((name) => path.join(projectsDirectory, name));
+    const entriesByDirectory = await Promise.all(historyDirectories.map(async (historyDirectory) => {
+      if (!(await directoryExists(historyDirectory))) return [];
+      const entries = await readdir(historyDirectory, { withFileTypes: true });
+      return entries
         .filter((entry) => entry.isFile() && entry.name.endsWith(".jsonl"))
-        .map((entry) => {
-          const filePath = path.join(historyDirectory, entry.name);
-          return this.cachedParse("claude", filePath, projectPath, () => this.parseClaude(filePath, projectPath));
-        })
+        .map((entry) => path.join(historyDirectory, entry.name));
+    }));
+    const files = [...new Set(entriesByDirectory.flat())];
+    const sessions = await Promise.all(
+      files.map((filePath) =>
+        this.cachedParse("claude", filePath, projectPath, () => this.parseClaude(filePath, projectPath))
+      )
     );
     return sessions.filter((session): session is AgentSession => session !== undefined);
   }
@@ -274,4 +283,22 @@ export class SessionDiscoveryService {
   private session(session: AgentSession): AgentSession {
     return session;
   }
+}
+
+async function mapWithConcurrency<T, R>(
+  items: readonly T[],
+  concurrency: number,
+  operation: (item: T) => Promise<R>
+): Promise<R[]> {
+  const results = new Array<R>(items.length);
+  let nextIndex = 0;
+  await Promise.all(Array.from({ length: Math.min(concurrency, items.length) }, async () => {
+    while (nextIndex < items.length) {
+      const index = nextIndex;
+      nextIndex += 1;
+      const item = items[index];
+      if (item !== undefined) results[index] = await operation(item);
+    }
+  }));
+  return results;
 }

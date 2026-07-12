@@ -7,7 +7,12 @@ export default defineConfig({
     coverage: {
       provider: "v8",
       reporter: ["text", "html"],
-      include: ["src/core/**/*.ts", "src/providers/**/*.ts", "src/services/**/*.ts"]
+      include: [
+        "src/core/**/*.ts",
+        "src/providers/**/*.ts",
+        "src/services/**/*.ts",
+        "src/terminal/{activity,exitMarker,streamText,taskState}.ts"
+      ]
     }
   }
 });

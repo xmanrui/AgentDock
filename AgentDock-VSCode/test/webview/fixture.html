@@ -1,0 +1,150 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>AgentDock Webview Fixture</title>
+  <style>
+    :root {
+      --vscode-foreground: #e8ebe7;
+      --vscode-descriptionForeground: #919b92;
+      --vscode-sideBar-background: #151a16;
+      --vscode-input-background: #101510;
+      --vscode-input-foreground: #e8ebe7;
+      --vscode-input-border: #364139;
+      --vscode-focusBorder: #4c83c3;
+      --vscode-button-background: #315f95;
+      --vscode-button-foreground: #ffffff;
+      --vscode-button-secondaryBackground: #252d27;
+      --vscode-button-secondaryForeground: #dce1dc;
+      --vscode-button-secondaryHoverBackground: #303a32;
+      --vscode-badge-background: #40526b;
+      --vscode-badge-foreground: #f2f5fa;
+      --vscode-editorWidget-background: #20251f;
+      --vscode-widget-border: #3d473f;
+      --vscode-progressBar-background: #3b82f6;
+      --vscode-terminal-background: #1b1f20;
+      --vscode-terminal-foreground: #d8dbdf;
+      --vscode-terminal-border: #3f4850;
+      --vscode-charts-orange: #ef8354;
+      --vscode-charts-blue: #59a5d8;
+      --vscode-notifications-background: #262b27;
+      --vscode-notificationsErrorIcon-foreground: #f07178;
+      --vscode-notificationsInfoIcon-foreground: #61afef;
+      --vscode-font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      --vscode-font-size: 13px;
+    }
+    body { width: min(100vw, 980px); margin: 0 auto !important; }
+  </style>
+</head>
+<body>
+  <main id="app"></main>
+  <div id="overlay-root"></div>
+  <script>
+    const providers = [
+      { id: "codex", displayName: "Codex", enabled: true, iconUri: "/media/codex.svg" },
+      { id: "claude-code", displayName: "Claude Code", enabled: true, iconUri: "/media/claude.svg" },
+      { id: "gemini", displayName: "Gemini CLI", enabled: true, iconUri: "/media/gemini.svg" }
+    ];
+    const base = {
+      projectPath: "/workspace/AgentDock",
+      cwd: "/workspace/AgentDock",
+      providerSessionId: "fixture",
+      historyFilePath: "/tmp/fixture.jsonl",
+      summary: "",
+      createdAt: Date.now() - 86400000,
+      pinned: false
+    };
+    const dashboard = {
+      type: "dashboard-state",
+      projectPath: "/workspace/AgentDock",
+      loading: false,
+      refreshing: false,
+      providers,
+      sessions: [
+        {
+          ...base,
+          id: "codex:one",
+          name: "实现 VS Code 版本完整会话仪表盘",
+          providerId: "codex",
+          providerName: "Codex",
+          updatedAt: Date.now() - 120000,
+          updatedLabel: "2 分钟前",
+          totalTokens: 27800000,
+          dailyTokens: [0, 120000, 180000, 140000, 270000, 90000, 210000],
+          dailyAverageResponseMillis: [null, 2200, 1800, 3100, 2400, 1900, 2600],
+          terminalOpen: true,
+          taskState: "working",
+          liveText: "正在检查项目中的终端监听逻辑，并同步更新会话状态。"
+        },
+        {
+          ...base,
+          id: "claude-code:two",
+          name: "优化 AgentDock 会话预览和额度弹框",
+          providerId: "claude-code",
+          providerName: "Claude Code",
+          updatedAt: Date.now() - 10800000,
+          updatedLabel: "3 小时前",
+          totalTokens: 428000000,
+          dailyTokens: [25000, 33000, 22000, 57000, 91000, 43000, 66000],
+          dailyAverageResponseMillis: [4100, 3600, null, 2800, 5200, 3100, 2400],
+          terminalOpen: true,
+          taskState: "ready"
+        },
+        {
+          ...base,
+          id: "gemini:three",
+          name: "验证 Gemini CLI 会话发现与 Token 指标",
+          providerId: "gemini",
+          providerName: "Gemini CLI",
+          updatedAt: Date.now() - 259200000,
+          updatedLabel: "3 天前",
+          totalTokens: 740000,
+          dailyTokens: [0, 0, 15000, 0, 42000, 12000, 8000],
+          dailyAverageResponseMillis: [null, null, 1900, null, 2800, 2200, 1700],
+          terminalOpen: false,
+          taskState: "idle"
+        }
+      ]
+    };
+    window.acquireVsCodeApi = () => ({
+      postMessage(message) {
+        if (message.type === "ready" || message.type === "refresh") {
+          setTimeout(() => window.postMessage(dashboard, "*"), 0);
+        }
+        if (message.type === "load-preview") {
+          setTimeout(() => window.postMessage({
+            type: "session-preview",
+            sessionId: message.sessionId,
+            preview: {
+              omittedMessageCount: 3,
+              messages: [
+                { role: "user", text: "请把本项目的插件功能 1:1 移植到 VS Code，并完成测试。" },
+                { role: "assistant", text: "我会先盘点 JetBrains 版本的数据、界面和终端能力，再逐层移植。" },
+                { role: "user", text: "趋势图需要显示最近 7 天，每天都有一个数据点。" },
+                { role: "assistant", text: "已按 7 天固定窗口生成平滑曲线，并保留每日细点与渐变面积。" }
+              ]
+            }
+          }, "*"), 60);
+        }
+        if (message.type === "load-provider-usage") {
+          setTimeout(() => window.postMessage({
+            type: "provider-usage",
+            usage: {
+              providerId: message.providerId,
+              providerName: "Codex",
+              status: message.providerId === "gemini" ? "unavailable" : "available",
+              projectTokenTotal: 428000000,
+              fiveHour: { usedPercent: 8, resetsAtEpochSeconds: Math.floor(Date.now() / 1000) + 7200 },
+              weekly: { usedPercent: 16, resetsAtEpochSeconds: Math.floor(Date.now() / 1000) + 345600 },
+              resetCount: message.providerId === "codex" ? 2 : undefined,
+              message: message.providerId === "gemini" ? "Usage limits are not supported for this provider." : undefined
+            }
+          }, "*"), 60);
+        }
+      }
+    });
+  </script>
+  <script src="/dist/webview.js"></script>
+</body>
+</html>
