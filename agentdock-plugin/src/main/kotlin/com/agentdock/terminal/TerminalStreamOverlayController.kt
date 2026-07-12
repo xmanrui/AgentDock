@@ -363,7 +363,9 @@ internal data class TerminalStreamAnchor(
 internal object TerminalStreamBubbleGeometry {
     fun layout(containerWidth: Int, anchor: TerminalStreamAnchor): TerminalStreamBubbleLayout {
         val margin = JBUI.scale(6)
-        val boxWidth = anchor.width.coerceAtMost((containerWidth - margin * 2).coerceAtLeast(1))
+        val siblingGap = JBUI.scale(6)
+        val preferredBoxWidth = (anchor.width - siblingGap).coerceAtLeast(1)
+        val boxWidth = preferredBoxWidth.coerceAtMost((containerWidth - margin * 2).coerceAtLeast(1))
         val boxHeight = JBUI.scale(28)
         val arrowHeight = JBUI.scale(6)
         val arrowHalfWidth = minOf(JBUI.scale(8), (boxWidth / 4).coerceAtLeast(1))

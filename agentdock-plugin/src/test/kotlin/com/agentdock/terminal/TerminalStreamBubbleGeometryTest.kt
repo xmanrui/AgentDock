@@ -15,7 +15,7 @@ class TerminalStreamBubbleGeometryTest {
         )
         val layout = TerminalStreamBubbleGeometry.layout(900, anchor)
 
-        assertEquals(anchor.width, layout.boxWidth)
+        assertTrue(layout.boxWidth < anchor.width)
         assertTrue(layout.boxY + layout.boxHeight < anchor.topY)
         assertEquals(layout.boxX + layout.boxWidth / 2, layout.arrowTipX)
         assertEquals(layout.arrowTipX, anchor.centerX)
@@ -50,5 +50,21 @@ class TerminalStreamBubbleGeometryTest {
         )
 
         assertEquals(compact.boxHeight, oversizedTitle.boxHeight)
+    }
+
+    @Test
+    fun `adjacent terminal bubbles keep a visual gap`() {
+        val first = TerminalStreamBubbleGeometry.layout(
+            900,
+            TerminalStreamAnchor(centerX = 250, topY = 600, width = 300, height = 30)
+        )
+        val second = TerminalStreamBubbleGeometry.layout(
+            900,
+            TerminalStreamAnchor(centerX = 550, topY = 600, width = 300, height = 30)
+        )
+
+        assertTrue(second.boxX > first.boxX + first.boxWidth)
+        assertEquals(first.arrowTipX, 250)
+        assertEquals(second.arrowTipX, 550)
     }
 }
