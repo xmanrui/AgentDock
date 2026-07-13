@@ -5,9 +5,12 @@ import com.google.gson.JsonElement
 import com.google.gson.JsonObject
 import com.google.gson.JsonParser
 
-enum class TerminalActivityEvent {
-    Started,
-    Completed
+sealed interface TerminalActivityEvent {
+    val turnId: String?
+
+    data class Started(override val turnId: String? = null) : TerminalActivityEvent
+
+    data class Completed(override val turnId: String? = null) : TerminalActivityEvent
 }
 
 internal object TerminalActivityEventParser {
@@ -22,22 +25,23 @@ internal object TerminalActivityEventParser {
 
     private fun parseCodex(json: JsonObject): TerminalActivityEvent? {
         if (json.string("type") != "event_msg") return null
-        return when (json.obj("payload")?.string("type")) {
-            "task_started" -> TerminalActivityEvent.Started
-            "task_complete", "turn_aborted" -> TerminalActivityEvent.Completed
+        val payload = json.obj("payload") ?: return null
+        return when (payload.string("type")) {
+            "task_started" -> TerminalActivityEvent.Started(payload.string("turn_id"))
+            "task_complete", "turn_aborted" -> TerminalActivityEvent.Completed(payload.string("turn_id"))
             else -> null
         }
     }
 
     private fun parseClaudeCode(json: JsonObject): TerminalActivityEvent? {
         if (json.string("type") == "system" && json.string("subtype") == "turn_duration") {
-            return TerminalActivityEvent.Completed
+            return TerminalActivityEvent.Completed()
         }
         if (json.string("type") != "user" || json.boolean("isMeta") == true) return null
         val message = json.obj("message")
         if (message?.string("role") != null && message.string("role") != "user") return null
         val content = message?.get("content") ?: json.get("content")
-        return if (hasPromptText(content)) TerminalActivityEvent.Started else null
+        return if (hasPromptText(content)) TerminalActivityEvent.Started() else null
     }
 
     private fun hasPromptText(content: JsonElement?): Boolean {

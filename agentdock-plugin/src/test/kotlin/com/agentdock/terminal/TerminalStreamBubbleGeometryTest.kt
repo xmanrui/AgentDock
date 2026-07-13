@@ -63,12 +63,50 @@ class TerminalStreamBubbleGeometryTest {
         )
 
         assertTrue(layout.hasGif)
-        assertEquals(JBUI.scale(96), layout.gifWidth)
-        assertEquals(JBUI.scale(104), layout.gifHeight)
+        assertEquals(JBUI.scale(128), layout.gifWidth)
+        assertEquals(JBUI.scale(139), layout.gifHeight)
         assertTrue(layout.arrowTipY < layout.gifY)
         assertTrue(layout.gifY + layout.gifHeight < anchor.topY)
         assertEquals(anchor.centerX, layout.gifX + layout.gifWidth / 2)
         assertEquals(layout.gifX + layout.gifWidth / 2, layout.arrowTipX)
+    }
+
+    @Test
+    fun `gif characters with different transparent padding share the same visible height`() {
+        val anchor = TerminalStreamAnchor(centerX = 450, topY = 600, width = 320, height = 30)
+        val narrowCharacter = TerminalStreamBubbleGeometry.layout(
+            containerWidth = 900,
+            anchor = anchor,
+            gifSize = TerminalStreamGifSize(width = 145, height = 198)
+        )
+        val wideCharacter = TerminalStreamBubbleGeometry.layout(
+            containerWidth = 900,
+            anchor = anchor,
+            gifSize = TerminalStreamGifSize(width = 182, height = 198)
+        )
+
+        assertEquals(JBUI.scale(139), narrowCharacter.gifHeight)
+        assertEquals(narrowCharacter.gifHeight, wideCharacter.gifHeight)
+        assertEquals(anchor.centerX, narrowCharacter.gifX + narrowCharacter.gifWidth / 2)
+        assertEquals(anchor.centerX, wideCharacter.gifX + wideCharacter.gifWidth / 2)
+    }
+
+    @Test
+    fun `narrow terminal titles do not shrink their gif character`() {
+        val narrowTitle = TerminalStreamBubbleGeometry.layout(
+            containerWidth = 900,
+            anchor = TerminalStreamAnchor(centerX = 250, topY = 600, width = 96, height = 30),
+            gifSize = TerminalStreamGifSize(width = 182, height = 198)
+        )
+        val wideTitle = TerminalStreamBubbleGeometry.layout(
+            containerWidth = 900,
+            anchor = TerminalStreamAnchor(centerX = 650, topY = 600, width = 320, height = 30),
+            gifSize = TerminalStreamGifSize(width = 182, height = 198)
+        )
+
+        assertEquals(JBUI.scale(139), narrowTitle.gifHeight)
+        assertEquals(wideTitle.gifWidth, narrowTitle.gifWidth)
+        assertEquals(wideTitle.gifHeight, narrowTitle.gifHeight)
     }
 
     @Test

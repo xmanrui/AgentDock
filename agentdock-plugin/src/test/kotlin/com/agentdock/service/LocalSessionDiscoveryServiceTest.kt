@@ -34,6 +34,35 @@ class LocalSessionDiscoveryServiceTest {
     }
 
     @Test
+    fun `does not let codex subagent history replace its parent session`() {
+        val fixture = Fixture()
+        val parentId = "019f4295-c4d2-7131-8775-706769a5b630"
+        val subagentId = "019f4296-d5e3-7242-9886-81787a6c7411"
+        val parentPath = "2026/07/09/rollout-2026-07-09T00-35-39-$parentId.jsonl"
+        fixture.writeCodexSession(
+            parentPath,
+            """
+            {"timestamp":"2026-07-08T16:36:48Z","type":"session_meta","payload":{"id":"$parentId","cwd":"${fixture.project.path}","source":"cli"}}
+            {"timestamp":"2026-07-08T16:36:49Z","type":"response_item","payload":{"type":"message","role":"user","content":"Parent task"}}
+            """.trimIndent()
+        )
+        fixture.writeCodexSession(
+            "2026/07/09/rollout-2026-07-09T00-36-10-$subagentId.jsonl",
+            """
+            {"timestamp":"2026-07-08T16:37:10Z","type":"session_meta","payload":{"id":"$subagentId","cwd":"${fixture.project.path}","source":{"subagent":{"thread_spawn":{"parent_thread_id":"$parentId"}}}}}
+            {"timestamp":"2026-07-08T16:36:48Z","type":"session_meta","payload":{"id":"$parentId","cwd":"${fixture.project.path}","source":"cli"}}
+            {"timestamp":"2026-07-08T16:37:11Z","type":"response_item","payload":{"type":"message","role":"user","content":"Delegated task"}}
+            """.trimIndent()
+        )
+
+        val sessions = fixture.discovery().discover(fixture.project.path)
+
+        assertEquals(1, sessions.size)
+        assertEquals(parentId, sessions.single().providerSessionId)
+        assertTrue(sessions.single().historyFilePath.endsWith(parentPath))
+    }
+
+    @Test
     fun `ignores codex sessions from other cwd even when text mentions project`() {
         val fixture = Fixture()
         val sessionId = "019f3dc4-caa4-7040-840a-1490c1188bc3"

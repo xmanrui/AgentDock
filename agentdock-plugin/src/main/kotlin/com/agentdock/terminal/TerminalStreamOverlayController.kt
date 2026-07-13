@@ -16,12 +16,16 @@ import java.awt.event.ComponentAdapter
 import java.awt.event.ComponentEvent
 import java.awt.geom.AffineTransform
 import java.awt.geom.Path2D
+import java.awt.image.BufferedImage
+import java.net.URL
+import javax.imageio.ImageIO
 import javax.swing.ImageIcon
 import javax.swing.JComponent
 import javax.swing.JLayeredPane
 import javax.swing.SwingUtilities
 import javax.swing.Timer
 import javax.swing.UIManager
+import org.w3c.dom.Node
 import kotlin.math.min
 import kotlin.math.roundToInt
 import kotlin.random.Random
@@ -150,7 +154,7 @@ internal class TerminalStreamTickerOverlay(
         if (!ticker.isActive()) selectedGif = gifProvider()
         val anchor = anchorProvider()
         val viewportWidth = anchor
-            ?.let { TerminalStreamBubbleGeometry.layout(width, it, selectedGif?.icon?.gifSize()).contentWidth }
+            ?.let { TerminalStreamBubbleGeometry.layout(width, it, selectedGif?.visibleSize()).contentWidth }
             ?: JBUI.scale(FALLBACK_VIEWPORT_WIDTH)
         ticker.offer(text, viewportWidth, clock())
         isVisible = true
@@ -186,7 +190,7 @@ internal class TerminalStreamTickerOverlay(
                 ?.deriveFont(Font.PLAIN, JBUI.scale(FONT_SIZE).toFloat())
                 ?: Font(Font.SANS_SERIF, Font.PLAIN, JBUI.scale(FONT_SIZE))
 
-            val layout = TerminalStreamBubbleGeometry.layout(width, anchor, selectedGif?.icon?.gifSize())
+            val layout = TerminalStreamBubbleGeometry.layout(width, anchor, selectedGif?.visibleSize())
             paintBubble(copy, layout)
             paintGif(copy, layout)
             paintTickerText(copy, layout)
@@ -253,15 +257,21 @@ internal class TerminalStreamTickerOverlay(
     }
 
     private fun paintGif(graphics: Graphics2D, layout: TerminalStreamBubbleLayout) {
-        val gif = selectedGif?.icon ?: return
+        val selection = selectedGif ?: return
         if (!layout.hasGif) return
+        val gif = selection.icon
+        val source = selection.visibleBounds
         graphics.setRenderingHint(RenderingHints.KEY_INTERPOLATION, RenderingHints.VALUE_INTERPOLATION_BILINEAR)
         graphics.drawImage(
             gif.image,
             layout.gifX,
             layout.gifY,
-            layout.gifWidth,
-            layout.gifHeight,
+            layout.gifX + layout.gifWidth,
+            layout.gifY + layout.gifHeight,
+            source.x,
+            source.y,
+            source.x + source.width,
+            source.y + source.height,
             this
         )
     }
@@ -284,11 +294,135 @@ internal data class TerminalStreamGifSize(
 
 internal data class TerminalStreamGifSelection(
     val resourcePath: String,
-    val icon: ImageIcon
+    val icon: ImageIcon,
+    val visibleBounds: TerminalStreamGifBounds
 )
 
-private fun ImageIcon.gifSize(): TerminalStreamGifSize? {
-    return if (iconWidth > 0 && iconHeight > 0) TerminalStreamGifSize(iconWidth, iconHeight) else null
+private fun TerminalStreamGifSelection.visibleSize(): TerminalStreamGifSize {
+    return TerminalStreamGifSize(visibleBounds.width, visibleBounds.height)
+}
+
+internal data class TerminalStreamGifBounds(
+    val x: Int,
+    val y: Int,
+    val width: Int,
+    val height: Int
+)
+
+internal object TerminalStreamGifContentBounds {
+    fun detect(resource: URL, canvasSize: TerminalStreamGifSize): TerminalStreamGifBounds {
+        return runCatching { readAnimationBounds(resource, canvasSize) }
+            .getOrNull()
+            ?: canvasSize.fullBounds()
+    }
+
+    internal fun detect(frames: List<BufferedImage>, canvasSize: TerminalStreamGifSize): TerminalStreamGifBounds {
+        return frames.asSequence()
+            .mapNotNull { visibleFrameBounds(it, 0, 0) }
+            .reduceOrNull(::union)
+            ?.clampTo(canvasSize)
+            ?: canvasSize.fullBounds()
+    }
+
+    private fun readAnimationBounds(
+        resource: URL,
+        canvasSize: TerminalStreamGifSize
+    ): TerminalStreamGifBounds? {
+        resource.openStream().use { rawInput ->
+            val imageInput = ImageIO.createImageInputStream(rawInput) ?: return null
+            imageInput.use {
+                val readers = ImageIO.getImageReaders(imageInput)
+                if (!readers.hasNext()) return null
+                val reader = readers.next()
+                try {
+                    reader.input = imageInput
+                    var bounds: TerminalStreamGifBounds? = null
+                    repeat(reader.getNumImages(true)) { frameIndex ->
+                        val frame = reader.read(frameIndex)
+                        val (offsetX, offsetY) = frameOffset(reader.getImageMetadata(frameIndex).nativeMetadataFormatName
+                            ?.let { format -> reader.getImageMetadata(frameIndex).getAsTree(format) })
+                        visibleFrameBounds(frame, offsetX, offsetY)?.let { frameBounds ->
+                            bounds = bounds?.let { union(it, frameBounds) } ?: frameBounds
+                        }
+                    }
+                    return bounds?.clampTo(canvasSize)
+                } finally {
+                    reader.dispose()
+                }
+            }
+        }
+    }
+
+    private fun visibleFrameBounds(
+        image: BufferedImage,
+        offsetX: Int,
+        offsetY: Int
+    ): TerminalStreamGifBounds? {
+        var left = image.width
+        var top = image.height
+        var right = -1
+        var bottom = -1
+        val pixels = IntArray(image.width)
+        for (y in 0 until image.height) {
+            image.getRGB(0, y, image.width, 1, pixels, 0, image.width)
+            for (x in pixels.indices) {
+                if ((pixels[x] ushr 24) == 0) continue
+                left = minOf(left, x)
+                top = minOf(top, y)
+                right = maxOf(right, x)
+                bottom = maxOf(bottom, y)
+            }
+        }
+        if (right < left || bottom < top) return null
+        return TerminalStreamGifBounds(
+            x = offsetX + left,
+            y = offsetY + top,
+            width = right - left + 1,
+            height = bottom - top + 1
+        )
+    }
+
+    private fun frameOffset(root: Node?): Pair<Int, Int> {
+        val descriptor = root?.findNode("ImageDescriptor") ?: return 0 to 0
+        val attributes = descriptor.attributes ?: return 0 to 0
+        val x = attributes.getNamedItem("imageLeftPosition")?.nodeValue?.toIntOrNull() ?: 0
+        val y = attributes.getNamedItem("imageTopPosition")?.nodeValue?.toIntOrNull() ?: 0
+        return x to y
+    }
+
+    private fun Node.findNode(name: String): Node? {
+        if (nodeName == name) return this
+        var child = firstChild
+        while (child != null) {
+            child.findNode(name)?.let { return it }
+            child = child.nextSibling
+        }
+        return null
+    }
+
+    private fun union(
+        first: TerminalStreamGifBounds,
+        second: TerminalStreamGifBounds
+    ): TerminalStreamGifBounds {
+        val left = minOf(first.x, second.x)
+        val top = minOf(first.y, second.y)
+        val right = maxOf(first.x + first.width, second.x + second.width)
+        val bottom = maxOf(first.y + first.height, second.y + second.height)
+        return TerminalStreamGifBounds(left, top, right - left, bottom - top)
+    }
+
+    private fun TerminalStreamGifBounds.clampTo(canvasSize: TerminalStreamGifSize): TerminalStreamGifBounds? {
+        val left = x.coerceIn(0, canvasSize.width)
+        val top = y.coerceIn(0, canvasSize.height)
+        val right = (x + width).coerceIn(left, canvasSize.width)
+        val bottom = (y + height).coerceIn(top, canvasSize.height)
+        if (right <= left || bottom <= top) return null
+        return TerminalStreamGifBounds(left, top, right - left, bottom - top)
+    }
+
+    private fun TerminalStreamGifSize.fullBounds(): TerminalStreamGifBounds {
+        return TerminalStreamGifBounds(0, 0, width, height)
+    }
 }
 
 internal object TerminalStreamGifCatalog {
@@ -298,6 +432,7 @@ internal object TerminalStreamGifCatalog {
 
     private val gifResourcePaths: List<String> by lazy { discoverResourcePaths() }
     private val usageCountsByPath = mutableMapOf<String, Int>()
+    private val visibleBoundsByPath = mutableMapOf<String, TerminalStreamGifBounds>()
 
     @Synchronized
     fun acquire(random: Random = Random.Default): TerminalStreamGifSelection? {
@@ -315,8 +450,14 @@ internal object TerminalStreamGifCatalog {
             val url = TerminalStreamGifCatalog::class.java.getResource(path) ?: continue
             val icon = ImageIcon(url)
             if (icon.iconWidth > 0 && icon.iconHeight > 0) {
+                val visibleBounds = visibleBoundsByPath.getOrPut(path) {
+                    TerminalStreamGifContentBounds.detect(
+                        url,
+                        TerminalStreamGifSize(icon.iconWidth, icon.iconHeight)
+                    )
+                }
                 usageCountsByPath[path] = usageCountsByPath.getOrDefault(path, 0) + 1
-                return TerminalStreamGifSelection(path, icon)
+                return TerminalStreamGifSelection(path, icon, visibleBounds)
             }
         }
         return null
@@ -484,8 +625,10 @@ internal object TerminalStreamBubbleGeometry {
         val gifTitleGap = JBUI.scale(2)
         val maximumGifHeight = (
             anchor.topY - margin - boxHeight - arrowHeight - gifBubbleGap - gifTitleGap
-            ).coerceAtLeast(0).coerceAtMost(JBUI.scale(104))
-        val maximumGifWidth = minOf(boxWidth, JBUI.scale(128))
+            ).coerceAtLeast(0).coerceAtMost(JBUI.scale(139))
+        val maximumGifWidth = (containerWidth - margin * 2)
+            .coerceAtLeast(0)
+            .coerceAtMost(JBUI.scale(171))
         val scaledGifSize = gifSize?.scaleToFit(maximumGifWidth, maximumGifHeight)
         val gifWidth = scaledGifSize?.width ?: 0
         val gifHeight = scaledGifSize?.height ?: 0

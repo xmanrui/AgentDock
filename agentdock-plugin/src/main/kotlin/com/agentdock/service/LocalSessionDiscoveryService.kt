@@ -45,6 +45,7 @@ class LocalSessionDiscoveryService(
         var firstUserMessage: String? = null
         var firstTimestamp = 0L
         var lastTimestamp = file.lastModified()
+        var foundSessionMetadata = false
 
         file.useLines { lines ->
             lines.forEach { line ->
@@ -55,8 +56,10 @@ class LocalSessionDiscoveryService(
                     lastTimestamp = timestamp
                 }
 
-                if (json.string("type") == "session_meta") {
+                if (json.string("type") == "session_meta" && !foundSessionMetadata) {
                     val payload = json.obj("payload")
+                    foundSessionMetadata = true
+                    if (payload?.isCodexSubagentSource() == true) return null
                     sessionId = payload?.string("id") ?: sessionId
                     cwd = payload?.string("cwd") ?: cwd
                 }
@@ -249,6 +252,11 @@ class LocalSessionDiscoveryService(
     private fun JsonObject.string(name: String): String? {
         val value = get(name) ?: return null
         return if (value.isJsonPrimitive && value.asJsonPrimitive.isString) value.asString else null
+    }
+
+    private fun JsonObject.isCodexSubagentSource(): Boolean {
+        val source = get("source") ?: return false
+        return source.isJsonObject && source.asJsonObject.has("subagent")
     }
 
     private fun JsonObject?.textFromContent(): String? {

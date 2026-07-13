@@ -29,6 +29,7 @@ internal class TerminalTaskPresentationController(
 ) {
     @Volatile
     private var state = TerminalTaskState.Idle
+    private val activityTracker = TerminalTaskActivityTracker()
     private val statusIcon = TerminalTaskStatusIcon(baseIcon) { repaintTab() }
     private val streamOverlay = TerminalStreamOverlayController(content) { statusIcon.lastPaintComponent }
     private val viewedTimer = Timer(VIEWED_DELAY_MS) {
@@ -70,12 +71,7 @@ internal class TerminalTaskPresentationController(
     }
 
     fun onActivity(event: TerminalActivityEvent) {
-        transition(
-            when (event) {
-                TerminalActivityEvent.Started -> TerminalTaskEvent.ActivityStarted
-                TerminalActivityEvent.Completed -> TerminalTaskEvent.ActivityCompleted
-            }
-        )
+        activityTracker.accept(event)?.let(::transition)
     }
 
     fun isWorking(): Boolean = state == TerminalTaskState.Working

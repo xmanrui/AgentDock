@@ -1,5 +1,6 @@
 package com.agentdock.terminal
 
+import java.awt.image.BufferedImage
 import kotlin.random.Random
 import javax.swing.ImageIcon
 import kotlin.test.Test
@@ -8,6 +9,26 @@ import kotlin.test.assertNotNull
 import kotlin.test.assertTrue
 
 class TerminalStreamGifCatalogTest {
+    @Test
+    fun `visible bounds ignore transparent padding across every animation frame`() {
+        val first = BufferedImage(20, 24, BufferedImage.TYPE_INT_ARGB).apply {
+            setRGB(5, 7, 0xFFFFFFFF.toInt())
+            setRGB(8, 12, 0xFFFFFFFF.toInt())
+        }
+        val second = BufferedImage(20, 24, BufferedImage.TYPE_INT_ARGB).apply {
+            setRGB(3, 9, 0xFFFFFFFF.toInt())
+            setRGB(10, 18, 0xFFFFFFFF.toInt())
+        }
+
+        assertEquals(
+            TerminalStreamGifBounds(x = 3, y = 7, width = 8, height = 12),
+            TerminalStreamGifContentBounds.detect(
+                frames = listOf(first, second),
+                canvasSize = TerminalStreamGifSize(width = 20, height = 24)
+            )
+        )
+    }
+
     @Test
     fun `catalog discovers gif resources and loads a random animation`() {
         val paths = TerminalStreamGifCatalog.resourcePaths()
@@ -26,6 +47,9 @@ class TerminalStreamGifCatalogTest {
         try {
             assertTrue(selection.icon.iconWidth > 0)
             assertTrue(selection.icon.iconHeight > 0)
+            assertTrue(selection.visibleBounds.width > 0)
+            assertTrue(selection.visibleBounds.height > 0)
+            assertTrue(selection.visibleBounds.height < selection.icon.iconHeight)
         } finally {
             TerminalStreamGifCatalog.release(selection)
         }

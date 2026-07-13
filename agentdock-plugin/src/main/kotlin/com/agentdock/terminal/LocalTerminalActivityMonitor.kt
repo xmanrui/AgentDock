@@ -75,8 +75,8 @@ internal class LocalTerminalActivityMonitor(
         for (index in geminiMessageCount until messages.size()) {
             val message = messages[index].takeIf { it.isJsonObject }?.asJsonObject ?: continue
             when (message.string("type")) {
-                "user" -> dispatch(TerminalActivityEvent.Started)
-                "gemini" -> dispatch(TerminalActivityEvent.Completed)
+                "user" -> dispatch(TerminalActivityEvent.Started())
+                "gemini" -> dispatch(TerminalActivityEvent.Completed())
             }
         }
         geminiMessageCount = messages.size()

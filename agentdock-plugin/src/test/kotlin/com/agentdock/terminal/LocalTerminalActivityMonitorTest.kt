@@ -34,7 +34,7 @@ class LocalTerminalActivityMonitorTest {
 
             assertTrue(latch.await(3, TimeUnit.SECONDS))
             assertEquals(
-                listOf(TerminalActivityEvent.Started, TerminalActivityEvent.Completed),
+                listOf(TerminalActivityEvent.Started(), TerminalActivityEvent.Completed()),
                 events.toList()
             )
         } finally {
@@ -68,7 +68,7 @@ class LocalTerminalActivityMonitorTest {
 
             assertTrue(latch.await(4, TimeUnit.SECONDS))
             assertEquals(
-                listOf(TerminalActivityEvent.Started, TerminalActivityEvent.Completed),
+                listOf(TerminalActivityEvent.Started(), TerminalActivityEvent.Completed()),
                 events.toList()
             )
         } finally {
@@ -100,7 +100,7 @@ class LocalTerminalActivityMonitorTest {
 
             assertTrue(latch.await(3, TimeUnit.SECONDS))
             assertEquals(
-                listOf(TerminalActivityEvent.Started, TerminalActivityEvent.Completed),
+                listOf(TerminalActivityEvent.Started(), TerminalActivityEvent.Completed()),
                 events.toList()
             )
         } finally {
