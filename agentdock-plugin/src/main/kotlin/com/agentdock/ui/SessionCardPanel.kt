@@ -80,7 +80,7 @@ class SessionCardPanel(
 
         val actions = JPanel(FlowLayout(FlowLayout.RIGHT, 4, 0)).apply {
             isOpaque = false
-            add(actionButton("Open") { onOpen(session) })
+            add(actionButton("Resume") { onOpen(session) })
             add(actionButton(if (session.pinned) "Unpin" else "Pin") { onPin(session) })
         }
 

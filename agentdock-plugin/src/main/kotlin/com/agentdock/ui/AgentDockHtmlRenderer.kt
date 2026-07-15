@@ -1167,8 +1167,8 @@ object AgentDockHtmlRenderer {
                       '<div class="session-footer">' +
                         '<div class="session-time" title="' + attr(item.updatedLabel) + '">' + escapeHtml(item.updatedLabel) + '</div>' +
                         '<div class="session-actions">' +
-                          '<button class="session-action" data-action="open" data-id="' + attr(item.id) + '">Open</button>' +
-                          '<button class="session-action yolo" data-action="open-yolo" data-id="' + attr(item.id) + '" title="Open in YOLO mode (bypasses permission checks)" aria-label="Open session in YOLO mode">YOLO</button>' +
+                          '<button class="session-action" data-action="open" data-id="' + attr(item.id) + '">Resume</button>' +
+                          '<button class="session-action yolo" data-action="open-yolo" data-id="' + attr(item.id) + '" title="Resume in YOLO mode (bypasses permission checks)" aria-label="Resume session in YOLO mode">YOLO</button>' +
                           '<button class="session-action" data-action="pin" data-id="' + attr(item.id) + '">' + (item.pinned ? "Unpin" : "Pin") + '</button>' +
                         '</div>' +
                       '</div>' +
