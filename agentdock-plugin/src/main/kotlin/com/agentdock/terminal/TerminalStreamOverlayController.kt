@@ -428,7 +428,7 @@ internal object TerminalStreamGifContentBounds {
 internal object TerminalStreamGifCatalog {
     private const val RESOURCE_DIRECTORY = "/images/gifs"
     private const val CATALOG_RESOURCE = "$RESOURCE_DIRECTORY/catalog.txt"
-    private const val FIRST_GIF_RESOURCE = "$RESOURCE_DIRECTORY/basketball-kunkun-running-right.gif"
+    private const val FIRST_GIF_RESOURCE = "$RESOURCE_DIRECTORY/ikun-jj-running-right.gif"
 
     private val gifResourcePaths: List<String> by lazy { discoverResourcePaths() }
     private val usageCountsByPath = mutableMapOf<String, Int>()

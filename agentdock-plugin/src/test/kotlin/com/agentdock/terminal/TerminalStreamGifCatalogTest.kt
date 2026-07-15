@@ -70,8 +70,8 @@ class TerminalStreamGifCatalogTest {
     }
 
     @Test
-    fun `first gif in each active group is running right and later gifs remain random`() {
-        val expectedFirstPath = "/images/gifs/basketball-kunkun-running-right.gif"
+    fun `first gif in each active group is ikun jj running right and later gifs remain random`() {
+        val expectedFirstPath = "/images/gifs/ikun-jj-running-right.gif"
         val first = assertNotNull(TerminalStreamGifCatalog.acquire(Random(11)))
         val second = assertNotNull(TerminalStreamGifCatalog.acquire(Random(11)))
 
