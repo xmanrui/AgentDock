@@ -7,7 +7,7 @@ plugins {
 }
 
 group = "com.agentdock"
-version = "1.3.0"
+version = "1.3.1"
 
 repositories {
     maven("https://maven.aliyun.com/repository/public")
@@ -100,9 +100,9 @@ intellijPlatform {
 
         changeNotes = """
             <ul>
-                <li>Shows live AI CLI output in a fixed ticker bubble above the active terminal title.</li>
-                <li>Filters terminal prompts and status chrome, with deduplication and rate limiting for readable animation.</li>
-                <li>Scrolls messages from right to left and points the bubble at its terminal without blocking IDE input.</li>
+                <li>Adds animated terminal stream characters with an expanded GIF catalog.</li>
+                <li>Improves stream bubble sizing, spacing, task-state transitions, and multi-terminal presentation.</li>
+                <li>Handles oversized terminal history records without blocking later lifecycle events.</li>
             </ul>
         """.trimIndent()
     }
