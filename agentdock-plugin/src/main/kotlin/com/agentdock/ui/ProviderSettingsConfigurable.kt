@@ -39,6 +39,7 @@ class ProviderSettingsConfigurable : Configurable {
                 provider.executable != field.executable.text ||
                 provider.detectCommand != field.detectCommand.text ||
                 provider.startCommandTemplate != field.startCommand.text ||
+                provider.yoloStartCommandTemplate != field.yoloStartCommand.text ||
                 provider.resumeCommandTemplate != field.resumeCommand.text ||
                 provider.yoloResumeCommandTemplate != field.yoloResumeCommand.text
         }
@@ -53,6 +54,7 @@ class ProviderSettingsConfigurable : Configurable {
                     executable = field.executable.text.trim(),
                     detectCommand = field.detectCommand.text.trim(),
                     startCommandTemplate = field.startCommand.text.trim(),
+                    yoloStartCommandTemplate = field.yoloStartCommand.text.trim(),
                     resumeCommandTemplate = field.resumeCommand.text.trim(),
                     yoloResumeCommandTemplate = field.yoloResumeCommand.text.trim()
                 )
@@ -67,6 +69,7 @@ class ProviderSettingsConfigurable : Configurable {
                 executable.text = provider.executable
                 detectCommand.text = provider.detectCommand
                 startCommand.text = provider.startCommandTemplate
+                yoloStartCommand.text = provider.yoloStartCommandTemplate
                 resumeCommand.text = provider.resumeCommandTemplate
                 yoloResumeCommand.text = provider.yoloResumeCommandTemplate
             }
@@ -79,7 +82,7 @@ class ProviderSettingsConfigurable : Configurable {
     }
 
     private fun addProviderSection(root: JPanel, sectionIndex: Int, provider: CLIProvider) {
-        val rowOffset = sectionIndex * 7
+        val rowOffset = sectionIndex * 8
         addLabel(root, rowOffset, "${provider.displayName} provider")
 
         val providerFields = ProviderFields(
@@ -87,6 +90,7 @@ class ProviderSettingsConfigurable : Configurable {
             executable = JBTextField(provider.executable),
             detectCommand = JBTextField(provider.detectCommand),
             startCommand = JBTextField(provider.startCommandTemplate),
+            yoloStartCommand = JBTextField(provider.yoloStartCommandTemplate),
             resumeCommand = JBTextField(provider.resumeCommandTemplate),
             yoloResumeCommand = JBTextField(provider.yoloResumeCommandTemplate)
         )
@@ -96,8 +100,9 @@ class ProviderSettingsConfigurable : Configurable {
         addField(root, rowOffset + 2, "Executable", providerFields.executable)
         addField(root, rowOffset + 3, "Detect command", providerFields.detectCommand)
         addField(root, rowOffset + 4, "Start command", providerFields.startCommand)
-        addField(root, rowOffset + 5, "Resume command", providerFields.resumeCommand)
-        addField(root, rowOffset + 6, "YOLO resume", providerFields.yoloResumeCommand)
+        addField(root, rowOffset + 5, "YOLO start", providerFields.yoloStartCommand)
+        addField(root, rowOffset + 6, "Resume command", providerFields.resumeCommand)
+        addField(root, rowOffset + 7, "YOLO resume", providerFields.yoloResumeCommand)
     }
 
     private fun addLabel(root: JPanel, row: Int, text: String) {
@@ -137,6 +142,7 @@ class ProviderSettingsConfigurable : Configurable {
         val executable: JBTextField,
         val detectCommand: JBTextField,
         val startCommand: JBTextField,
+        val yoloStartCommand: JBTextField,
         val resumeCommand: JBTextField,
         val yoloResumeCommand: JBTextField
     )

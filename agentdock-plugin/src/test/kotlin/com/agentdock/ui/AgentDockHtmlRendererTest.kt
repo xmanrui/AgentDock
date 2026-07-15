@@ -74,6 +74,34 @@ class AgentDockHtmlRendererTest {
         assertContains(html, "\"id\":\"gemini\"")
         assertContains(html, "providerId === \"gemini\"")
         assertContains(html, "Search sessions")
+        assertContains(html, "new-session-launcher")
+        assertContains(html, "data-new-session-default=\"true\"")
+        assertContains(html, "data-hint-placement=\"below\"")
+        assertContains(html, "data-hint-kind=\"action\"")
+        assertContains(html, "Start a new ")
+        assertContains(html, "newSessionDefault.addEventListener(\"mouseenter\"")
+        assertContains(html, "newSessionDefault.addEventListener(\"focus\"")
+        assertContains(html, ".agentdock-tooltip.action-hint")
+        assertContains(html, ".agentdock-tooltip.below.show")
+        assertContains(html, "data-new-session-menu-toggle=\"true\"")
+        assertContains(html, "data-new-session-provider=\"")
+        assertContains(html, "data-new-session-yolo=\"false\"")
+        assertContains(html, "data-new-session-yolo=\"true\"")
+        assertContains(html, "send(\"new-default\", {})")
+        assertContains(html, "send(\"new\", {providerId: providerId, yolo: Boolean(yolo)})")
+        assertContains(html, "setNewSessionMenuOpen")
+        assertContains(html, "function closeNewSessionMenu()")
+        assertContains(html, "closeNewSessionMenu: closeNewSessionMenu")
+        assertContains(html, "window.addEventListener(\"blur\", closeNewSessionMenu)")
+        assertContains(html, "if (!launcher) closeNewSessionMenu()")
+        assertContains(html, "event.stopPropagation()")
+        assertContains(html, "width: min(276px, calc(100vw - 20px))")
+        assertContains(html, "grid-template-columns: minmax(0, 1fr) 82px")
+        assertContains(html, "margin-left: 2px")
+        assertContains(html, "border: 1px solid rgba(168, 178, 163, .28)")
+        assertContains(html, "background: rgba(255, 255, 255, .035)")
+        assertFalse(html.contains(">Standard<"))
+        assertFalse(html.contains("confirm("))
         assertContains(html, "--content-horizontal-padding: 10px")
         assertContains(html, "padding: 8px var(--content-horizontal-padding)")
         assertContains(html, "padding: 7px var(--content-horizontal-padding)")
@@ -180,12 +208,10 @@ class AgentDockHtmlRendererTest {
         assertFalse(html.contains("Context", ignoreCase = true))
         assertFalse(html.contains("Rename"))
         assertFalse(html.contains("Refresh"))
-        assertFalse(html.contains("Providers"))
         assertFalse(html.contains("Import Local Sessions"))
         assertFalse(html.contains("sessions-head"))
         assertFalse(html.contains("<span>Sessions</span>"))
         assertFalse(html.contains("<span>AgentDock</span>"))
-        assertFalse(html.contains("data-action=\"new\""))
         assertFalse(html.contains("Provider settings"))
         assertFalse(html.contains("Archive"))
         assertFalse(html.contains("Unarchive"))
@@ -201,5 +227,27 @@ class AgentDockHtmlRendererTest {
         assertFalse(html.contains("minmax(0, 1fr) 44px"))
         assertTrue(html.indexOf("data-action=\"open\"") < html.indexOf("data-action=\"open-yolo\""))
         assertTrue(html.indexOf("data-action=\"open-yolo\"") < html.indexOf("data-action=\"pin\""))
+    }
+
+    @Test
+    fun `renders the persisted yolo provider as the direct launch default`() {
+        val html = AgentDockHtmlRenderer.render(
+            initialState = AgentDockHtmlRenderer.ViewState(
+                count = 0,
+                providers = listOf(
+                    AgentDockHtmlRenderer.ProviderItem("codex", "Codex"),
+                    AgentDockHtmlRenderer.ProviderItem("claude-code", "Claude Code")
+                ),
+                sessions = emptyList(),
+                defaultNewSessionProviderId = "claude-code",
+                defaultNewSessionYolo = true
+            ),
+            bridgeScript = "window.__agentdockMessage = message;"
+        )
+
+        assertContains(html, "\"defaultNewSessionProviderId\":\"claude-code\"")
+        assertContains(html, "\"defaultNewSessionYolo\":true")
+        assertContains(html, "new-session-default-yolo")
+        assertContains(html, "selectedYolo ? '<span class=\"new-session-default-yolo\">YOLO</span>'")
     }
 }

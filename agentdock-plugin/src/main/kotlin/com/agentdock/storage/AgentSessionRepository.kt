@@ -11,6 +11,12 @@ class AgentSessionRepository(private val state: AgentDockProjectState) {
 
     fun find(id: String): AgentSession? = state.sessions.firstOrNull { it.id == id }
 
+    fun findByProviderSession(providerId: String, providerSessionId: String): AgentSession? {
+        return state.sessions.firstOrNull {
+            it.providerId == providerId && it.providerSessionId == providerSessionId
+        }
+    }
+
     fun add(session: AgentSession): AgentSession {
         state.sessions.removeAll { it.id == session.id }
         state.sessions.add(session)
@@ -26,6 +32,8 @@ class AgentSessionRepository(private val state: AgentDockProjectState) {
         }
         return session
     }
+
+    fun remove(sessionId: String): Boolean = state.sessions.removeAll { it.id == sessionId }
 
     companion object {
         val sessionComparator: Comparator<AgentSession> = compareByDescending<AgentSession> { it.pinned }

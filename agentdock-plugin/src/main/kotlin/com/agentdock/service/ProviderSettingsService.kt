@@ -24,6 +24,21 @@ class ProviderSettingsService : PersistentStateComponent<ProviderSettingsState> 
 
     fun provider(providerId: String): CLIProvider? = providers().firstOrNull { it.id == providerId }
 
+    fun newSessionPreference(enabledProviders: List<CLIProvider> = providers().filter { it.enabled }): NewSessionPreference? {
+        val configuredProvider = enabledProviders.firstOrNull { it.id == getState().newSessionProviderId }
+        if (configuredProvider != null) {
+            return NewSessionPreference(configuredProvider.id, getState().newSessionYolo)
+        }
+        val fallbackProvider = enabledProviders.firstOrNull() ?: return null
+        updateNewSessionPreference(fallbackProvider.id, yolo = false)
+        return NewSessionPreference(fallbackProvider.id, yolo = false)
+    }
+
+    fun updateNewSessionPreference(providerId: String, yolo: Boolean) {
+        getState().newSessionProviderId = providerId
+        getState().newSessionYolo = yolo
+    }
+
     fun updateProvider(updated: CLIProvider) {
         val providers = getState().providers
         val index = providers.indexOfFirst { it.id == updated.id }
@@ -43,3 +58,8 @@ class ProviderSettingsService : PersistentStateComponent<ProviderSettingsState> 
             ApplicationManager.getApplication().getService(ProviderSettingsService::class.java)
     }
 }
+
+data class NewSessionPreference(
+    val providerId: String,
+    val yolo: Boolean
+)

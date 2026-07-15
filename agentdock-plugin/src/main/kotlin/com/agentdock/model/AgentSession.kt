@@ -18,6 +18,7 @@ data class AgentSession(
     var pinned: Boolean = false,
     var archived: Boolean = false,
     var lastError: String? = null,
+    var pendingProviderBinding: Boolean = false,
     var tokenUsageCached: Boolean = false,
     var tokenUsageAvailable: Boolean = false,
     var tokenUsageTotal: Long = 0L,

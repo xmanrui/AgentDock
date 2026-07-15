@@ -19,6 +19,7 @@ class CLIProviderDefaultsTest {
         val providers = CLIProvider.defaultProviders()
 
         assertTrue(providers.all { "{{executable}}" in it.startCommandTemplate })
+        assertTrue(providers.all { "{{executable}}" in it.yoloStartCommandTemplate })
         assertTrue(providers.all { "{{executable}}" in it.resumeCommandTemplate })
         assertTrue(providers.all { "{{executable}}" in it.yoloResumeCommandTemplate })
     }
@@ -27,6 +28,18 @@ class CLIProviderDefaultsTest {
     fun `default yolo templates use each cli permission bypass flag`() {
         val providers = CLIProvider.defaultProviders().associateBy { it.id }
 
+        assertEquals(
+            "{{executable}} --dangerously-bypass-approvals-and-sandbox",
+            providers.getValue(CLIProvider.CODEX_ID).yoloStartCommandTemplate
+        )
+        assertEquals(
+            "{{executable}} --ide --name {{sessionName}} --dangerously-skip-permissions",
+            providers.getValue(CLIProvider.CLAUDE_CODE_ID).yoloStartCommandTemplate
+        )
+        assertEquals(
+            "{{executable}} --yolo",
+            providers.getValue(CLIProvider.GEMINI_ID).yoloStartCommandTemplate
+        )
         assertEquals(
             "{{executable}} resume --dangerously-bypass-approvals-and-sandbox {{providerSessionId?}}",
             providers.getValue(CLIProvider.CODEX_ID).yoloResumeCommandTemplate

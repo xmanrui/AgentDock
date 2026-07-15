@@ -96,6 +96,13 @@ class AgentSessionProjectService(private val project: Project) : PersistentState
         val discovered = LocalSessionDiscoveryService().discover(projectPath)
         discovered.forEach { discoveredSession ->
             val existing = repository.find(discoveredSession.id)
+                ?: discoveredSession.providerSessionId?.let { providerSessionId ->
+                    repository.findByProviderSession(discoveredSession.providerId, providerSessionId)
+                }
+                ?: PendingSessionMatcher.find(
+                    repository.all(includeArchived = true),
+                    discoveredSession
+                )
             if (existing == null) {
                 repository.add(discoveredSession)
             } else {
@@ -103,6 +110,7 @@ class AgentSessionProjectService(private val project: Project) : PersistentState
                 repository.update(existing)
             }
         }
+        pruneStalePendingSessions(now)
         return discovered.size
     }
 
@@ -112,6 +120,7 @@ class AgentSessionProjectService(private val project: Project) : PersistentState
         cwd: String,
         summary: String = "",
         providerSessionId: String? = null,
+        launchMode: SessionLaunchMode = SessionLaunchMode.Standard,
         terminalLauncher: TerminalLauncher = JetBrainsTerminalLauncher(project)
     ): AgentSessionOperationResult {
         val registry = CLIProviderRegistry()
@@ -123,34 +132,49 @@ class AgentSessionProjectService(private val project: Project) : PersistentState
             id = IdGenerator.sessionId(now),
             projectId = ProjectIdentity.idFor(project),
             projectPath = project.basePath.orEmpty(),
-            name = name.ifBlank { "Untitled ${provider.displayName} Session" },
+            name = name.ifBlank { provider.displayName },
             providerId = provider.id,
             status = AgentSessionStatus.Restorable,
             cwd = cwd.ifBlank { project.basePath ?: System.getProperty("user.home") },
             providerSessionId = providerSessionId?.takeIf { it.isNotBlank() },
             summary = summary,
             createdAt = now,
-            updatedAt = now
+            updatedAt = now,
+            pendingProviderBinding = providerSessionId.isNullOrBlank()
         )
 
-        repository.add(session)
+        val commandTemplate = when (launchMode) {
+            SessionLaunchMode.Standard -> provider.startCommandTemplate
+            SessionLaunchMode.Yolo -> provider.yoloStartCommandTemplate
+        }
+        if (commandTemplate.isBlank()) {
+            val modeLabel = if (launchMode == SessionLaunchMode.Yolo) "YOLO start" else "Start"
+            val message = "$modeLabel command is not configured for ${provider.displayName}."
+            AgentDockNotifications.warning(project, "$modeLabel unavailable", message)
+            return AgentSessionOperationResult.Failure(session, message)
+        }
 
         val detection = registry.detect(providerId)
         if (detection !is ProviderDetectionResult.Available) {
             session.status = AgentSessionStatus.MissingCli
-            clearTerminalOpenState(session.id)
             session.lastError = detectionMessage(detection)
-            repository.update(session)
             AgentDockNotifications.warning(project, "${provider.displayName} missing", session.lastError.orEmpty())
             return AgentSessionOperationResult.Failure(session, session.lastError.orEmpty())
         }
 
-        return launchSessionCommand(
+        repository.add(session)
+        val result = launchSessionCommand(
             session,
             provider.copy(executable = detection.executablePath),
-            provider.startCommandTemplate,
+            commandTemplate,
             terminalLauncher
         )
+        val sentToTerminal = (result as? AgentSessionOperationResult.Success)?.terminalResult is TerminalLaunchResult.Sent
+        if (session.pendingProviderBinding && !sentToTerminal) {
+            clearTerminalOpenState(session.id)
+            repository.remove(session.id)
+        }
+        return result
     }
 
     fun resumeSession(
@@ -339,9 +363,11 @@ class AgentSessionProjectService(private val project: Project) : PersistentState
     }
 
     private fun mergeDiscoveredSession(existing: AgentSession, discovered: AgentSession) {
+        val wasPendingProviderBinding = existing.pendingProviderBinding
         existing.projectId = discovered.projectId
         existing.projectPath = discovered.projectPath
-        if (existing.name.isBlank() ||
+        if ((wasPendingProviderBinding && existing.hasGeneratedPendingName()) ||
+            existing.name.isBlank() ||
             existing.name.startsWith("Codex session ") ||
             existing.name.startsWith("Claude Code session ") ||
             SessionTextSanitizer.isNoisy(existing.name)
@@ -355,6 +381,7 @@ class AgentSessionProjectService(private val project: Project) : PersistentState
         existing.cwd = discovered.cwd
         existing.providerSessionId = discovered.providerSessionId
         existing.historyFilePath = discovered.historyFilePath
+        existing.pendingProviderBinding = false
         existing.summary = discovered.summary
         existing.linkedFiles = discovered.linkedFiles
         existing.createdAt = minOf(existing.createdAt.takeIf { it > 0L } ?: discovered.createdAt, discovered.createdAt)
@@ -362,6 +389,20 @@ class AgentSessionProjectService(private val project: Project) : PersistentState
         if (!existing.archived) {
             existing.lastError = null
         }
+    }
+
+    private fun AgentSession.hasGeneratedPendingName(): Boolean {
+        return name == "Codex" || name == "Claude Code" || name == "Gemini CLI"
+    }
+
+    private fun pruneStalePendingSessions(now: Long) {
+        repository.all(includeArchived = true)
+            .filter { session ->
+                session.pendingProviderBinding &&
+                    !isTerminalOpen(session.id) &&
+                    now - session.createdAt >= PENDING_SESSION_RETENTION_MS
+            }
+            .forEach { repository.remove(it.id) }
     }
 
     private fun resetTransientTerminalState() {
@@ -397,7 +438,9 @@ class AgentSessionProjectService(private val project: Project) : PersistentState
         }
         if (!hasRemainingOpenTerminals) {
             repository.find(sessionId)?.let { session ->
-                if (!session.archived && session.status == AgentSessionStatus.Active) {
+                if (session.pendingProviderBinding) {
+                    repository.remove(session.id)
+                } else if (!session.archived && session.status == AgentSessionStatus.Active) {
                     session.status = AgentSessionStatus.Restorable
                     repository.update(session)
                 }
@@ -453,6 +496,7 @@ class AgentSessionProjectService(private val project: Project) : PersistentState
     companion object {
         private const val DISCOVERY_THROTTLE_MS = 60_000L
         private const val EXIT_MARKER_POLL_MS = 1_000
+        private const val PENDING_SESSION_RETENTION_MS = 30 * 60_000L
 
         fun getInstance(project: Project): AgentSessionProjectService =
             project.getService(AgentSessionProjectService::class.java)
@@ -461,5 +505,34 @@ class AgentSessionProjectService(private val project: Project) : PersistentState
     private enum class ResumeMode {
         Standard,
         Yolo
+    }
+}
+
+enum class SessionLaunchMode {
+    Standard,
+    Yolo
+}
+
+internal object PendingSessionMatcher {
+    private const val MAXIMUM_BINDING_DISTANCE_MS = 15 * 60_000L
+    private const val MAXIMUM_CLOCK_SKEW_MS = 10_000L
+
+    fun find(candidates: List<AgentSession>, discovered: AgentSession): AgentSession? {
+        val discoveredAt = discovered.createdAt.takeIf { it > 0L } ?: discovered.updatedAt
+        return candidates.asSequence()
+            .filter { candidate ->
+                candidate.pendingProviderBinding &&
+                    candidate.providerSessionId.isNullOrBlank() &&
+                    candidate.providerId == discovered.providerId &&
+                    sameDirectory(candidate.cwd, discovered.cwd) &&
+                    discoveredAt >= candidate.createdAt - MAXIMUM_CLOCK_SKEW_MS &&
+                    discoveredAt - candidate.createdAt <= MAXIMUM_BINDING_DISTANCE_MS
+            }
+            .minByOrNull { candidate -> kotlin.math.abs(discoveredAt - candidate.createdAt) }
+    }
+
+    private fun sameDirectory(first: String, second: String): Boolean {
+        if (first.isBlank() || second.isBlank()) return false
+        return File(first).absoluteFile.toPath().normalize() == File(second).absoluteFile.toPath().normalize()
     }
 }

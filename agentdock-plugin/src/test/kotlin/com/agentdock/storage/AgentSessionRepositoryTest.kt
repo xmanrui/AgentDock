@@ -33,6 +33,24 @@ class AgentSessionRepositoryTest {
         assertFalse(repository.all().any { it.id == "archived" })
     }
 
+    @Test
+    fun `provider session ids find locally keyed sessions after discovery binding`() {
+        val state = AgentDockProjectState()
+        val repository = AgentSessionRepository(state)
+        repository.add(
+            session("local-session").copy(
+                providerId = "codex",
+                providerSessionId = "provider-session"
+            )
+        )
+
+        assertEquals(
+            "local-session",
+            repository.findByProviderSession("codex", "provider-session")?.id
+        )
+        assertEquals(null, repository.findByProviderSession("claude-code", "provider-session"))
+    }
+
     private fun session(
         id: String,
         updatedAt: Long = 1,

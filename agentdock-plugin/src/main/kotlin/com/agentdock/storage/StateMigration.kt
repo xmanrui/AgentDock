@@ -37,6 +37,7 @@ object StateMigration {
 
     fun migrateProviderSettings(state: ProviderSettingsState): ProviderSettingsState {
         val needsYoloTemplateMigration = state.schemaVersion < 2
+        val needsYoloStartTemplateMigration = state.schemaVersion < 3
         if (state.schemaVersion <= 0) {
             state.schemaVersion = 1
         }
@@ -61,8 +62,15 @@ object StateMigration {
             if (needsYoloTemplateMigration && provider.yoloResumeCommandTemplate.isBlank()) {
                 provider.yoloResumeCommandTemplate = defaultsForProvider.yoloResumeCommandTemplate
             }
+            if (needsYoloStartTemplateMigration && provider.yoloStartCommandTemplate.isBlank()) {
+                provider.yoloStartCommandTemplate = defaultsForProvider.yoloStartCommandTemplate
+            }
         }
-        state.schemaVersion = maxOf(state.schemaVersion, 2)
+        if (state.newSessionProviderId !in supportedProviderIds) {
+            state.newSessionProviderId = CLIProvider.CODEX_ID
+            state.newSessionYolo = false
+        }
+        state.schemaVersion = maxOf(state.schemaVersion, 3)
         return state
     }
 

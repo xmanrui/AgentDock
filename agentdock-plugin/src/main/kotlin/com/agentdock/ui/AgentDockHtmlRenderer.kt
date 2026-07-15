@@ -8,12 +8,15 @@ object AgentDockHtmlRenderer {
     data class ViewState(
         val sessions: List<SessionItem>,
         val providers: List<ProviderItem> = emptyList(),
-        val count: Int
+        val count: Int,
+        val defaultNewSessionProviderId: String? = null,
+        val defaultNewSessionYolo: Boolean = false
     )
 
     data class ProviderItem(
         val id: String,
-        val name: String
+        val name: String,
+        val enabled: Boolean = true
     )
 
     data class SessionItem(
@@ -116,11 +119,13 @@ object AgentDockHtmlRenderer {
 
                 .search-row {
                   display: grid;
-                  grid-template-columns: minmax(0, 1fr);
+                  grid-template-columns: minmax(0, 1fr) auto;
                   gap: 8px;
                   align-items: center;
                   padding: 8px var(--content-horizontal-padding);
                   border-bottom: 1px solid var(--line-soft);
+                  position: relative;
+                  z-index: 20;
                 }
 
                 .search {
@@ -139,6 +144,194 @@ object AgentDockHtmlRenderer {
                 .search:focus {
                   border-color: rgba(115, 167, 255, .62);
                   box-shadow: 0 0 0 2px rgba(115, 167, 255, .13);
+                }
+
+                .new-session-launcher {
+                  height: 32px;
+                  min-width: 0;
+                  max-width: 196px;
+                  display: grid;
+                  grid-template-columns: minmax(0, 1fr) 30px;
+                  position: relative;
+                  border: 1px solid var(--line);
+                  border-radius: 7px;
+                  background: rgba(255, 255, 255, .045);
+                }
+
+                .new-session-default,
+                .new-session-menu-toggle,
+                .new-session-provider,
+                .new-session-yolo {
+                  border: 0;
+                  color: var(--text-soft);
+                  background: transparent;
+                  cursor: pointer;
+                }
+
+                .new-session-default {
+                  min-width: 0;
+                  height: 30px;
+                  padding: 0 8px;
+                  display: flex;
+                  align-items: center;
+                  gap: 7px;
+                  border-radius: 6px 0 0 6px;
+                  font-weight: 720;
+                  white-space: nowrap;
+                  transition: background .14s ease, color .14s ease;
+                }
+
+                .new-session-default:hover,
+                .new-session-menu-toggle:hover {
+                  color: var(--text);
+                  background: rgba(255, 255, 255, .075);
+                }
+
+                .new-session-default:disabled,
+                .new-session-menu-toggle:disabled {
+                  cursor: wait;
+                  opacity: .62;
+                }
+
+                .new-session-default .logo,
+                .new-session-provider .logo {
+                  width: 19px;
+                  height: 19px;
+                  margin: 0;
+                  flex: 0 0 19px;
+                }
+
+                .new-session-provider-name {
+                  min-width: 0;
+                  overflow: hidden;
+                  text-overflow: ellipsis;
+                }
+
+                .new-session-default-yolo {
+                  flex: 0 0 auto;
+                  padding: 2px 4px;
+                  border: 1px solid rgba(232, 183, 93, .42);
+                  border-radius: 4px;
+                  color: var(--yellow);
+                  background: rgba(232, 183, 93, .08);
+                  font-size: 9px;
+                  font-weight: 820;
+                  line-height: 1;
+                  letter-spacing: .02em;
+                }
+
+                .new-session-menu-toggle {
+                  width: 30px;
+                  height: 30px;
+                  padding: 0;
+                  display: inline-flex;
+                  align-items: center;
+                  justify-content: center;
+                  border-left: 1px solid var(--line);
+                  border-radius: 0 6px 6px 0;
+                  transition: background .14s ease, color .14s ease;
+                }
+
+                .new-session-menu-toggle svg {
+                  width: 14px;
+                  height: 14px;
+                  transition: transform .14s ease;
+                }
+
+                .new-session-launcher.menu-open .new-session-menu-toggle svg {
+                  transform: rotate(180deg);
+                }
+
+                .new-session-menu {
+                  position: absolute;
+                  top: calc(100% + 7px);
+                  right: 0;
+                  width: min(276px, calc(100vw - 20px));
+                  padding: 7px;
+                  display: none;
+                  gap: 4px;
+                  border: 1px solid #485048;
+                  border-radius: 10px;
+                  background: #252a27;
+                  box-shadow: 0 18px 46px rgba(0, 0, 0, .45), 0 2px 8px rgba(0, 0, 0, .28);
+                }
+
+                .new-session-launcher.menu-open .new-session-menu {
+                  display: grid;
+                  animation: agentdock-new-session-menu-in .12s ease-out;
+                }
+
+                @keyframes agentdock-new-session-menu-in {
+                  from { opacity: 0; transform: translateY(-4px) scale(.985); }
+                  to { opacity: 1; transform: translateY(0) scale(1); }
+                }
+
+                .new-session-row {
+                  min-width: 0;
+                  height: 40px;
+                  display: grid;
+                  grid-template-columns: minmax(0, 1fr) 82px;
+                  gap: 6px;
+                }
+
+                .new-session-provider {
+                  min-width: 0;
+                  padding: 0 10px;
+                  display: flex;
+                  align-items: center;
+                  gap: 10px;
+                  border: 1px solid rgba(168, 178, 163, .28);
+                  border-radius: 7px;
+                  color: var(--text);
+                  background: rgba(255, 255, 255, .035);
+                  font-size: 14px;
+                  font-weight: 680;
+                  text-align: left;
+                  transition: background .12s ease, border-color .12s ease;
+                }
+
+                .new-session-provider:hover,
+                .new-session-provider.selected {
+                  background: rgba(115, 167, 255, .18);
+                  border-color: rgba(115, 167, 255, .46);
+                }
+
+                .new-session-provider-check {
+                  width: 12px;
+                  margin-left: 2px;
+                  color: var(--blue);
+                  opacity: 0;
+                  font-size: 13px;
+                  text-align: center;
+                }
+
+                .new-session-provider.selected .new-session-provider-check {
+                  opacity: 1;
+                }
+
+                .new-session-yolo {
+                  min-width: 0;
+                  padding: 0 8px;
+                  border: 1px solid rgba(232, 183, 93, .32);
+                  border-radius: 7px;
+                  color: var(--yellow);
+                  background: rgba(232, 183, 93, .065);
+                  font-size: 11px;
+                  font-weight: 820;
+                  transition: color .12s ease, background .12s ease, border-color .12s ease;
+                }
+
+                .new-session-yolo:hover,
+                .new-session-yolo.selected {
+                  color: #ffe0a0;
+                  border-color: rgba(232, 183, 93, .58);
+                  background: rgba(232, 183, 93, .17);
+                }
+
+                @media (max-width: 360px) {
+                  .new-session-launcher { max-width: 154px; }
+                  .new-session-default { padding: 0 6px; gap: 5px; }
+                  .new-session-default-yolo { padding: 2px 3px; }
                 }
 
                 .plain-button {
@@ -259,6 +452,24 @@ object AgentDockHtmlRenderer {
                 .agentdock-tooltip.show {
                   opacity: 1;
                   transform: translate(-50%, calc(-100% - 8px));
+                }
+
+                .agentdock-tooltip.action-hint {
+                  padding: 9px 11px;
+                  border-color: #555b63;
+                  color: #e5e8ee;
+                  background: #34383f;
+                  font-size: 13px;
+                  font-weight: 650;
+                  box-shadow: 0 12px 30px rgba(0, 0, 0, .42);
+                }
+
+                .agentdock-tooltip.below {
+                  transform: translate(-50%, 4px);
+                }
+
+                .agentdock-tooltip.below.show {
+                  transform: translate(-50%, 8px);
                 }
 
                 .provider-filter .logo {
@@ -607,6 +818,9 @@ object AgentDockHtmlRenderer {
                   var refreshing = false;
                   var refreshStartedAt = 0;
                   var refreshFinishTimer = null;
+                  var newSessionMenuOpen = false;
+                  var newSessionLaunching = false;
+                  var newSessionLaunchTimer = null;
                   var sessionPreviewTimer = null;
                   var hoveredSessionId = null;
                   var requestedPreviewId = null;
@@ -854,9 +1068,66 @@ object AgentDockHtmlRenderer {
                     });
                   }
 
+                  function newSessionProviders() {
+                    return (state.providers || []).filter(function (provider) {
+                      return provider.enabled !== false;
+                    });
+                  }
+
+                  function defaultNewSessionProvider() {
+                    var providers = newSessionProviders();
+                    if (!providers.length) return null;
+                    return providers.find(function (provider) {
+                      return provider.id === state.defaultNewSessionProviderId;
+                    }) || providers[0];
+                  }
+
+                  function renderNewSessionLauncher() {
+                    var providers = newSessionProviders();
+                    var selected = defaultNewSessionProvider();
+                    if (!selected) {
+                      return '<div class="new-session-launcher">' +
+                        '<button class="new-session-default" data-action="settings" title="Configure AI CLI providers">Configure</button>' +
+                        '<button class="new-session-menu-toggle" disabled aria-label="No enabled AI CLI provider">' +
+                          '<svg viewBox="0 0 16 16" aria-hidden="true"><path d="m4 6 4 4 4-4" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"/></svg>' +
+                        '</button>' +
+                      '</div>';
+                    }
+                    var selectedYolo = selected.id === state.defaultNewSessionProviderId &&
+                      state.defaultNewSessionYolo === true;
+                    var openClass = newSessionMenuOpen ? " menu-open" : "";
+                    var disabled = newSessionLaunching ? " disabled" : "";
+                    var yoloBadge = selectedYolo ? '<span class="new-session-default-yolo">YOLO</span>' : '';
+                    var defaultHint = 'Start a new ' + selected.name + (selectedYolo ? ' YOLO' : '') + ' session';
+                    var rows = providers.map(function (provider) {
+                      var providerSelected = provider.id === selected.id && !selectedYolo ? " selected" : "";
+                      var yoloSelected = provider.id === selected.id && selectedYolo ? " selected" : "";
+                      return '<div class="new-session-row">' +
+                        '<button class="new-session-provider' + providerSelected + '" data-new-session-provider="' + attr(provider.id) + '" data-new-session-yolo="false" title="Start a new ' + attr(provider.name) + ' session">' +
+                          providerLogo(provider.id) +
+                          '<span class="new-session-provider-name">' + escapeHtml(provider.name) + '</span>' +
+                          '<span class="new-session-provider-check" aria-hidden="true">✓</span>' +
+                        '</button>' +
+                        '<button class="new-session-yolo' + yoloSelected + '" data-new-session-provider="' + attr(provider.id) + '" data-new-session-yolo="true" title="Start a new ' + attr(provider.name) + ' session in YOLO mode">YOLO</button>' +
+                      '</div>';
+                    }).join("");
+                    return '<div class="new-session-launcher' + openClass + '">' +
+                      '<button class="new-session-default" data-new-session-default="true" data-hint="' + attr(defaultHint) + '" data-hint-placement="below" data-hint-kind="action" aria-describedby="agentdock-tooltip" aria-label="' + attr(defaultHint) + '"' + disabled + '>' +
+                        providerLogo(selected.id) +
+                        '<span class="new-session-provider-name">' + escapeHtml(selected.name) + '</span>' +
+                        yoloBadge +
+                      '</button>' +
+                      '<button class="new-session-menu-toggle" data-new-session-menu-toggle="true" aria-label="Select AI CLI for a new session" aria-haspopup="menu" aria-expanded="' + (newSessionMenuOpen ? 'true' : 'false') + '"' + disabled + '>' +
+                        '<svg viewBox="0 0 16 16" aria-hidden="true"><path d="m4 6 4 4 4-4" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"/></svg>' +
+                      '</button>' +
+                      '<div class="new-session-menu" role="menu" aria-label="New AI session">' + rows + '</div>' +
+                    '</div>';
+                  }
+
                   function renderSearch() {
                     return '<section class="search-row">' +
                       '<input id="agentdock-search" class="search" placeholder="Search sessions" value="' + attr(query) + '">' +
+                      renderNewSessionLauncher() +
                     '</section>';
                   }
 
@@ -937,6 +1208,38 @@ object AgentDockHtmlRenderer {
                     return false;
                   }
 
+                  function setNewSessionMenuOpen(open) {
+                    newSessionMenuOpen = Boolean(open);
+                    var launcher = root.querySelector(".new-session-launcher");
+                    var toggle = root.querySelector("[data-new-session-menu-toggle]");
+                    if (launcher) launcher.classList.toggle("menu-open", newSessionMenuOpen);
+                    if (toggle) toggle.setAttribute("aria-expanded", newSessionMenuOpen ? "true" : "false");
+                  }
+
+                  function closeNewSessionMenu() {
+                    setNewSessionMenuOpen(false);
+                  }
+
+                  function beginNewSession(providerId, yolo) {
+                    if (newSessionLaunching) return;
+                    setNewSessionMenuOpen(false);
+                    newSessionLaunching = true;
+                    if (providerId) {
+                      state.defaultNewSessionProviderId = providerId;
+                      state.defaultNewSessionYolo = Boolean(yolo);
+                      send("new", {providerId: providerId, yolo: Boolean(yolo)});
+                    } else {
+                      send("new-default", {});
+                    }
+                    render({focusSearch: false});
+                    if (newSessionLaunchTimer) window.clearTimeout(newSessionLaunchTimer);
+                    newSessionLaunchTimer = window.setTimeout(function () {
+                      newSessionLaunching = false;
+                      newSessionLaunchTimer = null;
+                      if (!composingSearch) render({focusSearch: false});
+                    }, 700);
+                  }
+
                   function bind(forceSearchFocus) {
                     var input = document.getElementById("agentdock-search");
                     if (input) {
@@ -968,6 +1271,7 @@ object AgentDockHtmlRenderer {
                     }
                     root.querySelectorAll("[data-provider]").forEach(function (button) {
                       button.addEventListener("click", function () {
+                        setNewSessionMenuOpen(false);
                         hideSessionHint();
                         hideProviderUsage();
                         searchFocused = false;
@@ -990,12 +1294,40 @@ object AgentDockHtmlRenderer {
                     });
                     root.querySelectorAll("[data-action]").forEach(function (button) {
                       button.addEventListener("click", function () {
+                        setNewSessionMenuOpen(false);
                         hideSessionPreview(true);
                         hideProviderUsage();
                         var action = button.getAttribute("data-action");
                         var id = button.getAttribute("data-id");
                         if (action === "refresh") beginReloadFeedback();
                         send(action, {id: id});
+                      });
+                    });
+                    var newSessionDefault = root.querySelector("[data-new-session-default]");
+                    if (newSessionDefault) {
+                      newSessionDefault.addEventListener("mouseenter", function () { showSessionHint(newSessionDefault); });
+                      newSessionDefault.addEventListener("mouseleave", hideSessionHint);
+                      newSessionDefault.addEventListener("focus", function () { showSessionHint(newSessionDefault); });
+                      newSessionDefault.addEventListener("blur", hideSessionHint);
+                      newSessionDefault.addEventListener("click", function () {
+                        hideSessionHint();
+                        beginNewSession(null, false);
+                      });
+                    }
+                    var newSessionMenuToggle = root.querySelector("[data-new-session-menu-toggle]");
+                    if (newSessionMenuToggle) {
+                      newSessionMenuToggle.addEventListener("click", function (event) {
+                        event.stopPropagation();
+                        setNewSessionMenuOpen(!newSessionMenuOpen);
+                      });
+                    }
+                    root.querySelectorAll("[data-new-session-provider]").forEach(function (button) {
+                      button.addEventListener("click", function (event) {
+                        event.stopPropagation();
+                        beginNewSession(
+                          button.getAttribute("data-new-session-provider") || "",
+                          button.getAttribute("data-new-session-yolo") === "true"
+                        );
                       });
                     });
                     root.querySelectorAll(".session-name[data-session-preview-id]").forEach(function (title) {
@@ -1009,6 +1341,7 @@ object AgentDockHtmlRenderer {
                     var sessionsList = root.querySelector(".sessions-list");
                     if (sessionsList) {
                       sessionsList.addEventListener("scroll", function () {
+                        setNewSessionMenuOpen(false);
                         hideSessionPreview(true);
                         hideProviderUsage();
                       }, {passive: true});
@@ -1026,10 +1359,31 @@ object AgentDockHtmlRenderer {
                     bind(keepSearchFocus);
                   }
 
+                  document.addEventListener("pointerdown", function (event) {
+                    if (!newSessionMenuOpen) return;
+                    var launcher = event.target && event.target.closest
+                      ? event.target.closest(".new-session-launcher")
+                      : null;
+                    if (!launcher) closeNewSessionMenu();
+                  }, true);
+
+                  window.addEventListener("blur", closeNewSessionMenu);
+
+                  document.addEventListener("keydown", function (event) {
+                    if (event.key === "Escape" && newSessionMenuOpen) {
+                      event.preventDefault();
+                      setNewSessionMenuOpen(false);
+                    }
+                  });
+
                   function showSessionHint(button) {
                     var message = button.getAttribute("data-hint") || "";
                     if (!message) return;
+                    var placement = button.getAttribute("data-hint-placement") || "above";
+                    var hintKind = button.getAttribute("data-hint-kind") || "";
                     tooltip.textContent = message;
+                    tooltip.classList.toggle("below", placement === "below");
+                    tooltip.classList.toggle("action-hint", hintKind === "action");
                     tooltip.classList.add("show");
                     var rect = button.getBoundingClientRect();
                     var hintRect = tooltip.getBoundingClientRect();
@@ -1037,7 +1391,7 @@ object AgentDockHtmlRenderer {
                     var minLeft = 8 + hintRect.width / 2;
                     var maxLeft = window.innerWidth - 8 - hintRect.width / 2;
                     tooltip.style.left = Math.max(minLeft, Math.min(maxLeft, left)) + "px";
-                    tooltip.style.top = Math.max(8, rect.top) + "px";
+                    tooltip.style.top = (placement === "below" ? rect.bottom : Math.max(8, rect.top)) + "px";
                   }
 
                   function hideSessionHint() {
@@ -1150,7 +1504,8 @@ object AgentDockHtmlRenderer {
                   return {
                     render: render,
                     receive: receive,
-                    showError: showError
+                    showError: showError,
+                    closeNewSessionMenu: closeNewSessionMenu
                   };
                 })();
                 window.AgentDock.render();

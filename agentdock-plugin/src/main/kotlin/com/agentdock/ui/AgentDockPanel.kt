@@ -9,7 +9,10 @@ import com.agentdock.service.AgentSessionProjectService
 import com.agentdock.service.CLIProviderRegistry
 import com.agentdock.service.LocalSessionContentService
 import com.agentdock.service.LocalSessionTokenUsageService
+import com.agentdock.service.NewSessionPreference
+import com.agentdock.service.ProviderSettingsService
 import com.agentdock.service.ProviderUsageService
+import com.agentdock.service.SessionLaunchMode
 import com.agentdock.service.SessionTokenUsage
 import com.agentdock.util.SessionTextSanitizer
 import com.agentdock.util.TimeFormatter
@@ -28,13 +31,17 @@ import com.intellij.ui.jcef.JBCefApp
 import com.intellij.ui.jcef.JBCefBrowser
 import com.intellij.ui.jcef.JBCefBrowserBase
 import com.intellij.ui.jcef.JBCefJSQuery
+import java.awt.AWTEvent
 import java.awt.BorderLayout
 import java.awt.Color
+import java.awt.Toolkit
+import java.awt.event.AWTEventListener
 import java.awt.event.ComponentAdapter
 import java.awt.event.ComponentEvent
 import java.awt.Component
 import java.awt.Font
 import java.awt.event.HierarchyEvent
+import java.awt.event.MouseEvent
 import java.util.concurrent.atomic.AtomicBoolean
 import java.util.concurrent.atomic.AtomicLong
 import javax.swing.JComponent
@@ -49,6 +56,7 @@ class AgentDockPanel(
 ) : Disposable {
     private val service = AgentSessionProjectService.getInstance(project)
     private val providerRegistry = CLIProviderRegistry()
+    private val providerSettingsService = ProviderSettingsService.getInstance()
     private val browser: JBCefBrowser? = if (JBCefApp.isSupported()) JBCefBrowser() else null
     private val actionQuery: JBCefJSQuery? = browser?.let { JBCefJSQuery.create(it as JBCefBrowserBase) }
     private val removeTerminalStateListener: () -> Unit = service.addTerminalStateListener { pushState() }
@@ -68,11 +76,20 @@ class AgentDockPanel(
     private val providerUsageService = ProviderUsageService()
     private val previewRequestVersion = AtomicLong(0)
     private val providerUsageRequestVersion = AtomicLong(0)
+    private val newSessionDiscoveryTimers = mutableListOf<Timer>()
     private var panelShowing = false
     private var sessionCount: Int = 0
     private var lastObservedToolWindowVisible: Boolean? = null
 
     val component: JComponent = browser?.component ?: fallbackComponent()
+    private val outsideNewSessionClickListener = AWTEventListener { event ->
+        val mouseEvent = event as? MouseEvent ?: return@AWTEventListener
+        if (mouseEvent.id != MouseEvent.MOUSE_PRESSED) return@AWTEventListener
+        val source = mouseEvent.component ?: return@AWTEventListener
+        if (!SwingUtilities.isDescendingFrom(source, component)) {
+            closeNewSessionMenu()
+        }
+    }
     private val sessionPreviewPopup = SessionPreviewPopup(component)
     private val providerUsagePopup = ProviderUsagePopup(component)
     private val persistentRightToolWindowLayout = PersistentRightToolWindowLayout(
@@ -111,6 +128,10 @@ class AgentDockPanel(
         )
         if (browser != null) {
             installVisibilityRefreshHooks()
+            Toolkit.getDefaultToolkit().addAWTEventListener(
+                outsideNewSessionClickListener,
+                AWTEvent.MOUSE_EVENT_MASK
+            )
         }
         ApplicationManager.getApplication().executeOnPooledThread {
             sessionContentService.warmSourceIndex()
@@ -132,8 +153,19 @@ class AgentDockPanel(
         persistentRightToolWindowLayout.dispose()
         removeTerminalStateListener()
         autoRefreshTimer.stop()
+        newSessionDiscoveryTimers.forEach(Timer::stop)
+        newSessionDiscoveryTimers.clear()
+        Toolkit.getDefaultToolkit().removeAWTEventListener(outsideNewSessionClickListener)
         actionQuery?.dispose()
         browser?.dispose()
+    }
+
+    private fun closeNewSessionMenu() {
+        val activeBrowser = browser ?: return
+        val script = "window.AgentDock && window.AgentDock.closeNewSessionMenu && window.AgentDock.closeNewSessionMenu();"
+        ApplicationManager.getApplication().invokeLater {
+            activeBrowser.cefBrowser.executeJavaScript(script, activeBrowser.cefBrowser.url, 0)
+        }
     }
 
     private fun handleAction(payload: String): String {
@@ -149,7 +181,17 @@ class AgentDockPanel(
                     return AgentDockHtmlRenderer.refreshPendingResponseJson()
                 }
                 "settings" -> SwingUtilities.invokeLater { openSettings() }
-                "new" -> SwingUtilities.invokeLater { createSessionAndRefresh() }
+                "new-default" -> {
+                    SwingUtilities.invokeLater { createNewSession() }
+                    return AgentDockHtmlRenderer.interactionHandledResponseJson()
+                }
+                "new" -> {
+                    val providerId = json.string("providerId")
+                        ?: return AgentDockHtmlRenderer.interactionHandledResponseJson()
+                    val yolo = json.boolean("yolo") == true
+                    SwingUtilities.invokeLater { createNewSession(providerId, yolo) }
+                    return AgentDockHtmlRenderer.interactionHandledResponseJson()
+                }
                 "preview-show" -> {
                     val sessionId = json.string("id") ?: return AgentDockHtmlRenderer.interactionHandledResponseJson()
                     val anchor = json.previewAnchor()
@@ -193,22 +235,54 @@ class AgentDockPanel(
         }
     }
 
-    private fun createSessionAndRefresh() {
+    private fun createNewSession(providerId: String? = null, yolo: Boolean? = null) {
         hideSessionPreview(immediate = true)
         val providers = providerRegistry.listEnabledProviders()
-        val dialog = NewSessionDialog(project, providers)
-        if (!dialog.showAndGet()) return
+        val preference = if (providerId == null) {
+            providerSettingsService.newSessionPreference(providers)
+        } else {
+            providers.firstOrNull { it.id == providerId }?.let {
+                providerSettingsService.updateNewSessionPreference(providerId, yolo == true)
+                NewSessionPreference(providerId, yolo == true)
+            }
+        }
+        if (preference == null) {
+            AgentDockNotifications.warning(
+                project,
+                "No AI CLI available",
+                "Enable at least one provider in AgentDock Settings."
+            )
+            pushState()
+            return
+        }
 
         val result = service.createAndLaunchSession(
-            providerId = dialog.providerId,
-            name = dialog.sessionName,
-            cwd = dialog.cwd,
-            summary = dialog.summary,
-            providerSessionId = dialog.providerSessionId
+            providerId = preference.providerId,
+            name = "",
+            cwd = project.basePath.orEmpty(),
+            launchMode = if (preference.yolo) SessionLaunchMode.Yolo else SessionLaunchMode.Standard
         )
         handleResult(result)
         scheduleExclusiveRightToolWindowMode()
         pushState()
+        if (result is AgentSessionOperationResult.Success) {
+            scheduleNewSessionDiscovery()
+        }
+    }
+
+    private fun scheduleNewSessionDiscovery() {
+        listOf(2_500, 7_000, 15_000, 30_000).forEach { delay ->
+            lateinit var timer: Timer
+            timer = Timer(delay) {
+                timer.stop()
+                newSessionDiscoveryTimers.remove(timer)
+                requestBackgroundRefresh()
+            }.apply {
+                isRepeats = false
+            }
+            newSessionDiscoveryTimers += timer
+            timer.start()
+        }
     }
 
     private fun openSettings() {
@@ -397,16 +471,22 @@ class AgentDockPanel(
             )
         }
         val count = service.listSessions(includeArchived = false, discover = false).size
+        val newSessionPreference = providerSettingsService.newSessionPreference(
+            providerList.filter { it.enabled }
+        )
         updateToolWindowPresentation(count)
         return AgentDockHtmlRenderer.ViewState(
             sessions = sessions,
             providers = providerList.map { provider ->
                 AgentDockHtmlRenderer.ProviderItem(
                     id = provider.id,
-                    name = provider.displayName
+                    name = provider.displayName,
+                    enabled = provider.enabled
                 )
             },
-            count = count
+            count = count,
+            defaultNewSessionProviderId = newSessionPreference?.providerId,
+            defaultNewSessionYolo = newSessionPreference?.yolo == true
         )
     }
 

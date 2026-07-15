@@ -47,7 +47,7 @@ class StateMigrationTest {
         StateMigration.migrateProviderSettings(state)
 
         val defaults = CLIProvider.defaultProviders().associate { it.id to it.yoloResumeCommandTemplate }
-        assertEquals(2, state.schemaVersion)
+        assertEquals(3, state.schemaVersion)
         assertEquals(defaults, state.providers.associate { it.id to it.yoloResumeCommandTemplate })
     }
 
@@ -56,10 +56,52 @@ class StateMigrationTest {
         val codex = CLIProvider.defaultProviders()
             .first { it.id == CLIProvider.CODEX_ID }
             .copy(yoloResumeCommandTemplate = "")
-        val state = ProviderSettingsState(schemaVersion = 2, providers = mutableListOf(codex))
+        val state = ProviderSettingsState(schemaVersion = 3, providers = mutableListOf(codex))
 
         StateMigration.migrateProviderSettings(state)
 
         assertEquals("", state.providers.first { it.id == CLIProvider.CODEX_ID }.yoloResumeCommandTemplate)
+    }
+
+    @Test
+    fun `adds provider specific yolo start templates to version two settings`() {
+        val state = ProviderSettingsState(
+            schemaVersion = 2,
+            providers = CLIProvider.defaultProviders()
+                .map { it.copy(yoloStartCommandTemplate = "") }
+                .toMutableList()
+        )
+
+        StateMigration.migrateProviderSettings(state)
+
+        val defaults = CLIProvider.defaultProviders().associate { it.id to it.yoloStartCommandTemplate }
+        assertEquals(3, state.schemaVersion)
+        assertEquals(defaults, state.providers.associate { it.id to it.yoloStartCommandTemplate })
+    }
+
+    @Test
+    fun `preserves intentionally disabled yolo start template in current settings`() {
+        val codex = CLIProvider.defaultProviders()
+            .first { it.id == CLIProvider.CODEX_ID }
+            .copy(yoloStartCommandTemplate = "")
+        val state = ProviderSettingsState(schemaVersion = 3, providers = mutableListOf(codex))
+
+        StateMigration.migrateProviderSettings(state)
+
+        assertEquals("", state.providers.first { it.id == CLIProvider.CODEX_ID }.yoloStartCommandTemplate)
+    }
+
+    @Test
+    fun `repairs an unsupported new session provider preference`() {
+        val state = ProviderSettingsState(
+            schemaVersion = 3,
+            newSessionProviderId = "removed-provider",
+            newSessionYolo = true
+        )
+
+        StateMigration.migrateProviderSettings(state)
+
+        assertEquals(CLIProvider.CODEX_ID, state.newSessionProviderId)
+        assertEquals(false, state.newSessionYolo)
     }
 }
